@@ -13,7 +13,7 @@ Usage of ./sangrenel:
   -workers=1: Number of Kafka client workers
 </pre>
 
-The <code>workers</code> directive initializes n Kafka clients. Each client manages 5 Kafka producer instances in goroutines that synchronously publish messages to the referenced Kafka cluster/topic as fast as possible. Kafka client instance counts need to be scaled up in order to produce more throughput, as each client connection maxes out throughput with roughly 5 producers.
+The <code>workers</code> directive initializes n Kafka clients. Each client manages 5 Kafka producer instances in goroutines that synchronously publish messages (fixed Lorem Ipsum gibberish for now) to the referenced Kafka cluster/topic as fast as possible. Kafka client instance counts need to be scaled up in order to produce more throughput, as each client connection maxes out throughput with roughly 5 producers.
 
 If a topic is referenced that does not yet exist, Sangrenel will create one with a default of 2 partitions / 1 replica. Alternative parition/replica topologies should be created manually prior to running Sangrenel.
 
