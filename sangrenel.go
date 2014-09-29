@@ -4,13 +4,13 @@ import (
 	"flag"
 	"fmt"
 	kafka "github.com/Shopify/sarama"
+	"math/rand"
 	"os"
 	"os/signal"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
-	"math/rand"
 )
 
 var (
@@ -18,10 +18,10 @@ var (
 	clientKill_chan = make(chan bool, 1)
 	brokers         = []string{}
 	topic           *string
-	msgSize		*int
+	msgSize         *int
 	clientWorkers   *int
 	sentCounter     int
-	chars = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890!@#$%^&*(){}][:<>.")
+	chars           = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890!@#$%^&*(){}][:<>.")
 )
 
 func init() {
@@ -35,11 +35,11 @@ func init() {
 }
 
 func randMsg(n int) string {
-    s := make([]rune, n)
-    for i := range s {
-        s[i] = chars[rand.Intn(len(chars))]
-    }
-    return string(s)
+	s := make([]rune, n)
+	for i := range s {
+		s[i] = chars[rand.Intn(len(chars))]
+	}
+	return string(s)
 }
 
 func sendWorker(c kafka.Client) {
@@ -51,7 +51,7 @@ func sendWorker(c kafka.Client) {
 	for {
 		err = producer.SendMessage(*topic, nil, kafka.StringEncoder(randMsg(*msgSize)))
 		if err != nil {
-			panic(err)
+			fmt.Println(err.Error())
 		} else {
 			sentCounter++
 		}
