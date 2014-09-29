@@ -9,13 +9,14 @@ Smashes Kafka queues with lots of messages. Sangrenel accepts the following flag
 ./sangrenel -h
 Usage of ./sangrenel:
   -brokers="localhost:9092": Comma delimited list of Kafka brokers
+  -size=300: Message size in bytes
   -topic="sangrenel": Topic to publish to
   -workers=1: Number of Kafka client workers
 </pre>
 
-The <code>workers</code> directive initializes n Kafka clients. Each client manages 5 Kafka producer instances in goroutines that synchronously publish messages (fixed Lorem Ipsum gibberish for now) to the referenced Kafka cluster/topic as fast as possible. Kafka client instance counts need to be scaled up in order to produce more throughput, as each client connection maxes out throughput with roughly 5 producers. Note: You should also raise your <code>GOMAXPROCS</code> environment variable to support increasing numbers of clients.
+The <code>workers</code> directive initializes n Kafka clients. Each client manages 5 Kafka producer instances in goroutines that synchronously publish random messages of <code>-size</code> bytes to the referenced Kafka cluster/topic as fast as possible. Kafka client instance counts need to be scaled up in order to produce more throughput, as each client connection maxes out throughput with roughly 5 producers. Note: You should also raise your <code>GOMAXPROCS</code> environment variable to support increasing numbers of clients.
 
-If a topic is referenced that does not yet exist, Sangrenel will create one with a default of 2 partitions / 1 replica. Alternative parition/replica topologies should be created manually prior to running Sangrenel.
+If a topic is referenced that does not yet exist, Sangrenel will create one with a default of 2 partitions / 1 replica (or as defined in your Kafka server configuration). Alternative parition/replica topologies should be created manually prior to running Sangrenel.
 
 <pre>
 $ ./sangrenel --workers=10 --topic=test --brokers=10.0.1.37:9092,10.0.1.40:9092,10.0.1.62:9092
