@@ -47,12 +47,10 @@ client_5 connected
 
 ### Performance
 
-Sangrenel obliterating all cores on an EC2 c3.8xlarge instance in <code>noop</code> mode:
+Sangrenel obliterating all cores on an EC2 c3.8xlarge instance in <code>noop</code> mode (each case exceeding 3Gb/sec of raw, random data):
 
 GOMAXPROCS=32 / 32 workers / 3500 byte message size: ~125,000 messages/sec
 
 GOMAXPROCS=32 / 32 workers / 300 byte message size: ~1.38M messages/sec
-
-or 3Gb/sec+ in raw random data
 
 ![ScreenShot](http://us-east.manta.joyent.com/jalquiza/public/github/sangrenel.png)
