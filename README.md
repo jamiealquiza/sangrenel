@@ -19,10 +19,11 @@ The <code>workers</code> directive initializes n Kafka clients. Each client mana
 If a topic is referenced that does not yet exist, Sangrenel will create one with a default of 2 partitions / 1 replica (or as defined in your Kafka server configuration). Alternative parition/replica topologies should be created manually prior to running Sangrenel.
 
 <pre>
-$ ./sangrenel --workers=10 --topic=test --brokers=10.0.1.37:9092,10.0.1.40:9092,10.0.1.62:9092
+$ ./sangrenel --workers=10 --size=800 --topic=test --brokers=10.0.1.37:9092,10.0.1.40:9092,10.0.1.62:9092
 
 ::: Sangrenel :::
 Starting 10 workers
+Message size 800 bytes
 
 client_2 connected
 client_3 connected
