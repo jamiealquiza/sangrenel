@@ -31,7 +31,6 @@ func init() {
 	clientWorkers = flag.Int("workers", 1, "Number of Kafka client workers")
 	flag.Parse()
 	brokers = strings.Split(*flag_brokers, ",")
-	//rand.Seed(time.Now().UnixNano())
 }
 
 func randMsg(m []rune, generator *rand.Rand) string {
@@ -44,7 +43,7 @@ func randMsg(m []rune, generator *rand.Rand) string {
 func sendWorker(c kafka.Client) {
 	producer, err := kafka.NewProducer(&c, nil)
 	if err != nil {
-		panic(err)
+		fmt.Println(err.Error())	
 	}
 	defer producer.Close()
 
