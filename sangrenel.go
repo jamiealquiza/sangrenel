@@ -20,6 +20,7 @@ var (
 	topic           *string
 	msgSize         *int
 	clientWorkers   *int
+	noop            *bool
 	sentCounter     int
 	chars           = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890!@#$%^&*(){}][:<>.")
 )
@@ -28,6 +29,7 @@ func init() {
 	flag_brokers := flag.String("brokers", "localhost:9092", "Comma delimited list of Kafka brokers")
 	topic = flag.String("topic", "sangrenel", "Topic to publish to")
 	msgSize = flag.Int("size", 300, "Message size in bytes")
+	noop = flag.Bool("noop", false, "Test message generation performance, do not transmit messages")
 	clientWorkers = flag.Int("workers", 1, "Number of Kafka client workers")
 	flag.Parse()
 	brokers = strings.Split(*flag_brokers, ",")
@@ -43,19 +45,27 @@ func randMsg(m []rune, generator *rand.Rand) string {
 func sendWorker(c kafka.Client) {
 	producer, err := kafka.NewProducer(&c, nil)
 	if err != nil {
-		fmt.Println(err.Error())	
+		fmt.Println(err.Error())
 	}
 	defer producer.Close()
 
 	source := rand.NewSource(time.Now().UnixNano())
 	generator := rand.New(source)
 	msg := make([]rune, *msgSize)
-	for {
-		err = producer.SendMessage(*topic, nil, kafka.StringEncoder(randMsg(msg, generator)))
-		if err != nil {
-			fmt.Println(err.Error())
-		} else {
+	switch *noop {
+	case true:
+		for {
+			randMsg(msg, generator)
 			sentCounter++
+		}
+	default:
+		for {
+			err = producer.SendMessage(*topic, nil, kafka.StringEncoder(randMsg(msg, generator)))
+			if err != nil {
+				fmt.Println(err.Error())
+			} else {
+				sentCounter++
+			}
 		}
 	}
 }
