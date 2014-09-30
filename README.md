@@ -52,4 +52,6 @@ Sangrenel obliterating all cores on an EC2 c3.8xlarge instance in <code>noop</co
 GOMAXPROCS=32 / 32 workers / 3500 byte message size: ~125,000 messages/sec
 GOMAXPROCS=32 / 32 workers / 300 byte message size: ~1.38M messages/sec
 
+or 3Gb/sec+ in raw data
+
 ![ScreenShot](http://us-east.manta.joyent.com/jalquiza/public/github/sangrenel.png)
