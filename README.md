@@ -3,6 +3,8 @@ sangrenel
 
 "...basically a cloth bag filled with small jagged pieces of scrap iron"
 
+### Overview
+
 Smashes Kafka queues with lots of messages. Sangrenel accepts the following flags:
 
 <pre>
@@ -42,3 +44,12 @@ client_5 connected
 28478 messages/sec published to topic: test
 28037 messages/sec published to topic: test
 </pre>
+
+### Performance
+
+Sangrenel obliterating all cores on an EC2 c3.8xlarge instance in <code>noop</code> mode:
+
+GOMAXPROCS=32 / 32 workers / 3500 byte message size: ~125,000 messages/sec
+GOMAXPROCS=32 / 32 workers / 300 byte message size: ~1.38M messages/sec
+
+![ScreenShot](http://us-east.manta.joyent.com/jalquiza/public/github/sangrenel.png)
