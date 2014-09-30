@@ -16,7 +16,7 @@ import (
 var (
 	sig_chan        = make(chan os.Signal)
 	clientKill_chan = make(chan bool, 1)
-	brokers         = []string{}
+	brokers         []string
 	topic           *string
 	msgSize         *int
 	clientWorkers   *int
@@ -31,15 +31,14 @@ func init() {
 	clientWorkers = flag.Int("workers", 1, "Number of Kafka client workers")
 	flag.Parse()
 	brokers = strings.Split(*flag_brokers, ",")
-	rand.Seed(time.Now().UnixNano())
+	//rand.Seed(time.Now().UnixNano())
 }
 
-func randMsg(n int) string {
-	s := make([]rune, n)
-	for i := range s {
-		s[i] = chars[rand.Intn(len(chars))]
+func randMsg(m []rune, generator *rand.Rand) string {
+	for i := range m {
+		m[i] = chars[generator.Intn(len(chars))]
 	}
-	return string(s)
+	return string(m)
 }
 
 func sendWorker(c kafka.Client) {
@@ -48,8 +47,12 @@ func sendWorker(c kafka.Client) {
 		panic(err)
 	}
 	defer producer.Close()
+
+	source := rand.NewSource(time.Now().UnixNano())
+	generator := rand.New(source)
+	msg := make([]rune, *msgSize)
 	for {
-		err = producer.SendMessage(*topic, nil, kafka.StringEncoder(randMsg(*msgSize)))
+		err = producer.SendMessage(*topic, nil, kafka.StringEncoder(randMsg(msg, generator)))
 		if err != nil {
 			fmt.Println(err.Error())
 		} else {
