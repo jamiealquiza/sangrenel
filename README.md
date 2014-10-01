@@ -17,9 +17,9 @@ Usage of ./sangrenel:
   -workers=1: Number of Kafka client workers
 </pre>
 
-The <code>workers</code> directive initializes n Kafka clients. Each client manages 5 Kafka producer instances in goroutines that synchronously publish random messages of <code>-size</code> bytes to the referenced Kafka cluster/topic as fast as possible. Kafka client instance counts need to be scaled up in order to produce more throughput, as each client connection maxes out throughput with roughly 5 producers. 
+The <code>-workers</code> directive initializes n Kafka clients. Each client manages 5 Kafka producer instances in goroutines that synchronously publish random messages of <code>-size</code> bytes to the referenced Kafka cluster/topic as fast as possible. Kafka client instance counts need to be scaled up in order to produce more throughput, as each client connection maxes out throughput with roughly 5 producers instances. 
 
-Note: You should also raise the <code>GOMAXPROCS</code> environment variable to support increasing numbers of clients. Sangrenel should be tested with <code>--noop=true</code> (messages are only generated but not transmitted to the brokers) in order to determine the minimum message rate that the configured message size and worker concurrency can generate. Otherwise, you may see a throughput rate that's computationally bound versus the actual limitation of the Kafka brokers that you're testing.
+Note: Sangrenel will automatically raise <code>GOMAXPROCS</code> to the value detected by <code>runtime.NumCPU()</code> to support increasing numbers of <code>-workers</code>. Sangrenel should be tested with <code>--noop=true</code> (messages are only generated but not transmitted to the brokers) in order to determine the minimum message rate that the configured message size and worker concurrency can generate. Otherwise, you may see a throughput rate that's computationally bound versus the actual limitation of the Kafka brokers being testing.
 
 If a topic is referenced that does not yet exist, Sangrenel will create one with a default of 2 partitions / 1 replica (or as defined in your Kafka server configuration). Alternative parition/replica topologies should be created manually prior to running Sangrenel.
 

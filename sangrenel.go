@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"os"
 	"os/signal"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -33,6 +34,7 @@ func init() {
 	clientWorkers = flag.Int("workers", 1, "Number of Kafka client workers")
 	flag.Parse()
 	brokers = strings.Split(*flag_brokers, ",")
+	runtime.GOMAXPROCS(runtime.NumCPU())
 }
 
 func randMsg(m []rune, generator *rand.Rand) string {
