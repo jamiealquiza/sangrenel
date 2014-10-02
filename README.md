@@ -24,25 +24,25 @@ Note: Sangrenel will automatically raise <code>GOMAXPROCS</code> to the value de
 If a topic is referenced that does not yet exist, Sangrenel will create one with a default of 2 partitions / 1 replica (or as defined in your Kafka server configuration). Alternative parition/replica topologies should be created manually prior to running Sangrenel.
 
 <pre>
-$ ./sangrenel --workers=10 --size=800 --topic=test --brokers=10.0.1.37:9092,10.0.1.40:9092,10.0.1.62:9092
+$ ./sangrenel --size=2500 --workers=8 --topic=rep --brokers=10.0.1.37:9092,10.0.1.40:9092,10.0.1.62:9092
 
 ::: Sangrenel :::
-Starting 10 workers
-Message size 800 bytes
+Starting 8 workers
+Message size 2500 bytes
 
-client_2 connected
-client_3 connected
-client_9 connected
 client_7 connected
-client_10 connected
-client_4 connected
-client_6 connected
+client_3 connected
 client_8 connected
-client_1 connected
 client_5 connected
-27649 messages/sec published to topic: test
-28478 messages/sec published to topic: test
-28037 messages/sec published to topic: test
+client_6 connected
+client_2 connected
+client_1 connected
+client_4 connected
+Producing 533Mb/sec raw data @ 27938 messages/sec - topic: rep
+Producing 539Mb/sec raw data @ 28236 messages/sec - topic: rep
+Producing 533Mb/sec raw data @ 27940 messages/sec - topic: rep
+Producing 485Mb/sec raw data @ 25452 messages/sec - topic: rep
+Producing 530Mb/sec raw data @ 27798 messages/sec - topic: rep
 </pre>
 
 ### Performance
