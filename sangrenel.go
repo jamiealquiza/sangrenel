@@ -16,10 +16,11 @@ import (
 
 var (
 	sig_chan        = make(chan os.Signal)
-	clientKill_chan = make(chan bool, 1)
+	clientKill_chan = make(chan bool, 24)
 	brokers         []string
 	topic           *string
 	msgSize         *int
+	latency		[]float64
 	clientWorkers   *int
 	noop            *bool
 	sentCounter     int
@@ -62,11 +63,16 @@ func sendWorker(c kafka.Client) {
 		}
 	default:
 		for {
-			err = producer.SendMessage(*topic, nil, kafka.StringEncoder(randMsg(msg, generator)))
+		data := randMsg(msg, generator)
+		start := time.Now()
+		err = producer.SendMessage(*topic,
+				nil,
+				kafka.StringEncoder(data))
 			if err != nil {
-				fmt.Println(err.Error())
+				fmt.Println(err)
 			} else {
 				sentCounter++
+				latency = append(latency, time.Since(start).Seconds() * 1000)
 			}
 		}
 	}
@@ -93,7 +99,7 @@ func calcOutput(n int) string {
 	m := (float64(n) / 5) * float64(*msgSize)
 	var o string
 	switch {
-	case m > 131072:
+	case m >= 131072:
 		o = strconv.FormatFloat(m/131072, 'f', 0, 64) + "Mb/sec"
 	case m < 131072:
 		o = strconv.FormatFloat(m/1024, 'f', 0, 64) + "KB/sec"
@@ -101,9 +107,27 @@ func calcOutput(n int) string {
 	return o
 }
 
+func calcLatency() float64 {
+	var avg float64
+	switch *noop {
+	case true:
+		break 
+	default:	
+		var sum float64
+		for i := range latency {
+			sum += latency[i]
+		}
+		avg = sum / float64(len(latency))
+		latency = latency[:0]
+	}
+	return avg
+}
+
 func main() {
 	signal.Notify(sig_chan, syscall.SIGINT, syscall.SIGTERM)
-	fmt.Printf("\n::: Sangrenel :::\nStarting %s workers\nMessage size %s bytes\n\n", strconv.Itoa(*clientWorkers), strconv.Itoa(*msgSize))
+	fmt.Printf("\n::: Sangrenel :::\nStarting %s workers\nMessage size %s bytes\n\n",
+		strconv.Itoa(*clientWorkers),
+		strconv.Itoa(*msgSize))
 	for i := 0; i < *clientWorkers; i++ {
 		go createClient(i + 1)
 	}
@@ -111,18 +135,20 @@ func main() {
 	for {
 		select {
 		case <-tick:
-			fmt.Printf("%s Producing %s raw data @ %d messages/sec - topic: %s\n",
+			fmt.Printf("%s Producing %s raw data @ %d messages/sec | topic: %s | %.2fms avg latency\n",
 				time.Now().Format(time.RFC3339),
 				calcOutput(sentCounter),
 				sentCounter/5,
-				*topic)
+				*topic,
+				calcLatency()) 
 			sentCounter = 0
 		case <-sig_chan:
 			fmt.Println()
 			for i := 0; i < *clientWorkers; i++ {
 				clientKill_chan <- true
 			}
-			time.Sleep(3 * time.Second)
+			close(clientKill_chan)
+			time.Sleep(2 * time.Second)
 			os.Exit(0)
 		}
 	}
