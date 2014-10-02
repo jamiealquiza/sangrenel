@@ -38,11 +38,11 @@ client_6 connected
 client_2 connected
 client_1 connected
 client_4 connected
-Producing 533Mb/sec raw data @ 27938 messages/sec - topic: rep
-Producing 539Mb/sec raw data @ 28236 messages/sec - topic: rep
-Producing 533Mb/sec raw data @ 27940 messages/sec - topic: rep
-Producing 485Mb/sec raw data @ 25452 messages/sec - topic: rep
-Producing 530Mb/sec raw data @ 27798 messages/sec - topic: rep
+2014-10-02T17:44:20Z Producing 533Mb/sec raw data @ 27938 messages/sec - topic: rep
+2014-10-02T17:44:25Z Producing 539Mb/sec raw data @ 28236 messages/sec - topic: rep
+2014-10-02T17:44:30Z Producing 533Mb/sec raw data @ 27940 messages/sec - topic: rep
+2014-10-02T17:44:35Z Producing 485Mb/sec raw data @ 25452 messages/sec - topic: rep
+2014-10-02T17:44:40Z Producing 530Mb/sec raw data @ 27798 messages/sec - topic: rep
 </pre>
 
 ### Performance

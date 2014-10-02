@@ -111,7 +111,11 @@ func main() {
 	for {
 		select {
 		case <-tick:
-			fmt.Printf("Producing %s raw data @ %d messages/sec - topic: %s\n", calcOutput(sentCounter), sentCounter/5, *topic)
+			fmt.Printf("%s Producing %s raw data @ %d messages/sec - topic: %s\n",
+				time.Now().Format(time.RFC3339),
+				calcOutput(sentCounter),
+				sentCounter/5,
+				*topic)
 			sentCounter = 0
 		case <-sig_chan:
 			fmt.Println()
