@@ -89,6 +89,18 @@ func createClient(n int) {
 	client.Close()
 }
 
+func calcOutput(n int) string {
+	m := (float64(n) / 5) * float64(*msgSize)
+	var o string
+	switch {
+	case m > 131072:
+		o = strconv.FormatFloat(m/131072, 'f', 0, 64) + "Mb/sec"
+	case m < 131072:
+		o = strconv.FormatFloat(m/1024, 'f', 0, 64) + "KB/sec"
+	}
+	return o
+}
+
 func main() {
 	signal.Notify(sig_chan, syscall.SIGINT, syscall.SIGTERM)
 	fmt.Printf("\n::: Sangrenel :::\nStarting %s workers\nMessage size %s bytes\n\n", strconv.Itoa(*clientWorkers), strconv.Itoa(*msgSize))
@@ -99,7 +111,7 @@ func main() {
 	for {
 		select {
 		case <-tick:
-			fmt.Printf("%d messages/sec published to topic: %s\n", sentCounter/5, *topic)
+			fmt.Printf("Producing %s raw data @ %d messages/sec - topic: %s\n", calcOutput(sentCounter), sentCounter/5, *topic)
 			sentCounter = 0
 		case <-sig_chan:
 			fmt.Println()
