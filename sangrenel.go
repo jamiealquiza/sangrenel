@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -20,7 +21,7 @@ var (
 	brokers         []string
 	topic           *string
 	msgSize         *int
-	latency		[]float64
+	latency         []float64
 	clientWorkers   *int
 	noop            *bool
 	sentCounter     int
@@ -63,16 +64,16 @@ func sendWorker(c kafka.Client) {
 		}
 	default:
 		for {
-		data := randMsg(msg, generator)
-		start := time.Now()
-		err = producer.SendMessage(*topic,
+			data := randMsg(msg, generator)
+			start := time.Now()
+			err = producer.SendMessage(*topic,
 				nil,
 				kafka.StringEncoder(data))
 			if err != nil {
 				fmt.Println(err)
 			} else {
 				sentCounter++
-				latency = append(latency, time.Since(start).Seconds() * 1000)
+				latency = append(latency, time.Since(start).Seconds()*1000)
 			}
 		}
 	}
@@ -111,13 +112,15 @@ func calcLatency() float64 {
 	var avg float64
 	switch *noop {
 	case true:
-		break 
-	default:	
+		break
+	default:
+		sort.Float64s(latency)
 		var sum float64
-		for i := range latency {
+		topn := int(float64(len(latency)) * 0.90)
+		for i := topn; i < len(latency); i++ {
 			sum += latency[i]
 		}
-		avg = sum / float64(len(latency))
+		avg = sum / float64(len(latency)-topn)
 		latency = latency[:0]
 	}
 	return avg
@@ -140,7 +143,7 @@ func main() {
 				calcOutput(sentCounter),
 				sentCounter/5,
 				*topic,
-				calcLatency()) 
+				calcLatency())
 			sentCounter = 0
 		case <-sig_chan:
 			fmt.Println()

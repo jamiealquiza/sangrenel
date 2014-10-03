@@ -23,6 +23,8 @@ Note: Sangrenel will automatically raise <code>GOMAXPROCS</code> to the value de
 
 If a topic is referenced that does not yet exist, Sangrenel will create one with a default of 2 partitions / 1 replica (or as defined in your Kafka server configuration). Alternative parition/replica topologies should be created manually prior to running Sangrenel.
 
+Sangrenel outputs metrics based on the previous 5 seconds of operation: the amount of aggregate raw, random data being produced, message transaction rate (or generated rate if using <code>--noop</code>) and 90th percentile worst latencies average (time from message sent to receiving an ack from the broker). 
+
 <pre>
 $ ./sangrenel --size=2500 --workers=8 --topic=rep --brokers=10.0.1.37:9092,10.0.1.40:9092,10.0.1.62:9092
 
@@ -38,11 +40,10 @@ client_6 connected
 client_2 connected
 client_1 connected
 client_4 connected
-2014-10-02T17:44:20Z Producing 533Mb/sec raw data @ 27938 messages/sec - topic: rep
-2014-10-02T17:44:25Z Producing 539Mb/sec raw data @ 28236 messages/sec - topic: rep
-2014-10-02T17:44:30Z Producing 533Mb/sec raw data @ 27940 messages/sec - topic: rep
-2014-10-02T17:44:35Z Producing 485Mb/sec raw data @ 25452 messages/sec - topic: rep
-2014-10-02T17:44:40Z Producing 530Mb/sec raw data @ 27798 messages/sec - topic: rep
+2014-10-02T23:53:36Z Producing 546Mb/sec raw data @ 28627 messages/sec | topic: rep | 3.32ms avg latency
+2014-10-02T23:53:41Z Producing 528Mb/sec raw data @ 27671 messages/sec | topic: rep | 3.55ms avg latency
+2014-10-02T23:53:46Z Producing 516Mb/sec raw data @ 27040 messages/sec | topic: rep | 3.73ms avg latency
+2014-10-02T23:53:51Z Producing 478Mb/sec raw data @ 25039 messages/sec | topic: rep | 4.65ms avg latency
 </pre>
 
 ### Performance
