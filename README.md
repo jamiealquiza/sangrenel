@@ -23,7 +23,7 @@ Note: Sangrenel will automatically raise <code>GOMAXPROCS</code> to the value de
 
 If a topic is referenced that does not yet exist, Sangrenel will create one with a default of 2 partitions / 1 replica (or as defined in your Kafka server configuration). Alternative parition/replica topologies should be created manually prior to running Sangrenel.
 
-Sangrenel outputs metrics based on the previous 5 seconds of operation: the amount of aggregate raw, random data being produced, message transaction rate (or generated rate if using <code>--noop</code>) and 90th percentile worst latencies average (time from message sent to receiving an ack from the broker). 
+Sangrenel outputs metrics based on the previous 5 seconds of operation: the aggregate amount of data being produced, message transaction rate (or generated rate if using <code>--noop</code>) and 90th percentile worst latencies average (time from message sent to receiving an ack from the broker). 
 
 <pre>
 $ ./sangrenel --size=2500 --workers=8 --topic=rep --brokers=10.0.1.37:9092,10.0.1.40:9092,10.0.1.62:9092
