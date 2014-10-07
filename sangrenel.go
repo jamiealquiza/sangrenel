@@ -21,11 +21,11 @@ var (
 	brokers         []string
 	topic           *string
 	msgSize         *int
-	msgRate         *int
+	msgRate         *int64
 	clientWorkers   *int
 	noop            *bool
 	chars           = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890!@#$%^&*(){}][:<>.")
-	sentCntr        = make(chan int, 1)
+	sentCntr        = make(chan int64, 1)
 	latency         []float64
 	latency_chan    = make(chan float64, 1)
 	resetLat_chan   = make(chan bool, 1)
@@ -35,7 +35,7 @@ func init() {
 	flag_brokers := flag.String("brokers", "localhost:9092", "Comma delimited list of Kafka brokers")
 	topic = flag.String("topic", "sangrenel", "Topic to publish to")
 	msgSize = flag.Int("size", 300, "Message size in bytes")
-	msgRate = flag.Int("rate", 100000000, "Apply a global message rate limit")
+	msgRate = flag.Int64("rate", 100000000, "Apply a global message rate limit")
 	noop = flag.Bool("noop", false, "Test message generation performance, do not transmit messages")
 	clientWorkers = flag.Int("workers", 1, "Number of Kafka client workers")
 	flag.Parse()
@@ -49,15 +49,9 @@ func incrSent() {
 	sentCntr <- i + 1
 }
 
-func fetchSent() int {
+func fetchSent() int64 {
 	i := <-sentCntr
 	sentCntr <- i
-	return i
-}
-
-func fetchResetSent() int {
-	i := <-sentCntr
-	sentCntr <- 0
 	return i
 }
 
@@ -135,7 +129,7 @@ func createClient(n int) {
 	client.Close()
 }
 
-func calcOutput(n int) string {
+func calcOutput(n int64) string {
 	m := (float64(n) / 5) * float64(*msgSize)
 	var o string
 	switch {
@@ -175,15 +169,19 @@ func main() {
 	for i := 0; i < *clientWorkers; i++ {
 		go createClient(i + 1)
 	}
+
 	tick := time.Tick(5 * time.Second)
+	var currCnt, lastCnt int64
 	for {
 		select {
 		case <-tick:
-			sentCnt := fetchResetSent()
+			lastCnt = currCnt
+			currCnt = fetchSent()
+			deltaCnt := currCnt - lastCnt
 			fmt.Printf("%s Generating %s @ %d messages/sec | topic: %s | %.2fms avg latency\n",
 				time.Now().Format(time.RFC3339),
-				calcOutput(sentCnt),
-				sentCnt/5,
+				calcOutput(deltaCnt),
+				deltaCnt/5,
 				*topic,
 				calcLatency())
 		case <-sig_chan:
