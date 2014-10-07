@@ -13,11 +13,12 @@ Usage of ./sangrenel:
   -brokers="localhost:9092": Comma delimited list of Kafka brokers
   -noop=false: Test message generation performance, do not transmit messages
   -size=300: Message size in bytes
+  -rate=100000000: Apply a global message rate limit
   -topic="sangrenel": Topic to publish to
   -workers=1: Number of Kafka client workers
 </pre>
 
-The <code>-workers</code> directive initializes n Kafka clients. Each client manages 5 Kafka producer instances in goroutines that synchronously publish random messages of <code>-size</code> bytes to the referenced Kafka cluster/topic as fast as possible. Kafka client instance (worker) counts need to be scaled up in order to produce more throughput, as each client connection maxes out throughput with roughly 5 producers instances.
+The <code>-workers</code> directive initializes n Kafka clients. Each client manages 5 Kafka producer instances in goroutines that synchronously publish random messages of <code>-size</code> bytes to the referenced Kafka cluster/topic as fast as possible. Kafka client instance (worker) counts need to be scaled up in order to produce more throughput, as each client connection maxes out throughput with roughly 5 producers instances. The <code>-rate</code> directive allows you to place a global cap on the total message rate for all workers combined.
 
 Note: Sangrenel will automatically raise <code>GOMAXPROCS</code> to the value detected by <code>runtime.NumCPU()</code> to support increasing numbers of <code>-workers</code>. Sangrenel should be tested with <code>--noop</code> (messages are only generated but not transmitted to the brokers) in order to determine the maximum message rate that the configured message size and worker setting can generate. Otherwise, you may see a throughput rate that's computationally bound versus the actual limitation of the Kafka brokers being testing.
 
@@ -40,10 +41,10 @@ client_6 connected
 client_2 connected
 client_1 connected
 client_4 connected
-2014-10-02T23:53:36Z Producing 546Mb/sec raw data @ 28627 messages/sec | topic: rep | 3.32ms avg latency
-2014-10-02T23:53:41Z Producing 528Mb/sec raw data @ 27671 messages/sec | topic: rep | 3.55ms avg latency
-2014-10-02T23:53:46Z Producing 516Mb/sec raw data @ 27040 messages/sec | topic: rep | 3.73ms avg latency
-2014-10-02T23:53:51Z Producing 478Mb/sec raw data @ 25039 messages/sec | topic: rep | 4.65ms avg latency
+2014-10-02T23:53:36Z Generating 546Mb/sec @ 28627 messages/sec | topic: rep | 3.32ms avg latency
+2014-10-02T23:53:41Z Generating 528Mb/sec @ 27671 messages/sec | topic: rep | 3.55ms avg latency
+2014-10-02T23:53:46Z Generating 516Mb/sec @ 27040 messages/sec | topic: rep | 3.73ms avg latency
+2014-10-02T23:53:51Z Generating 478Mb/sec @ 25039 messages/sec | topic: rep | 4.65ms avg latency
 </pre>
 
 ### Performance
