@@ -21,11 +21,13 @@ var (
 	brokers         []string
 	topic           *string
 	msgSize         *int
-	latency         []float64
 	clientWorkers   *int
 	noop            *bool
 	chars           = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890!@#$%^&*(){}][:<>.")
-	sentCntr	= make(chan int, 1)
+	sentCntr        = make(chan int, 1)
+	latency         []float64
+	latency_chan    = make(chan float64, 1)
+	resetLat_chan   = make(chan bool, 1)
 )
 
 func init() {
@@ -41,14 +43,25 @@ func init() {
 }
 
 func incrSent() {
-	i := <- sentCntr
-	sentCntr <- i+1
+	i := <-sentCntr
+	sentCntr <- i + 1
 }
 
 func fetchSent() int {
-	i := <- sentCntr
+	i := <-sentCntr
 	sentCntr <- 0
 	return i
+}
+
+func latencyAggregator() {
+	for {
+		select {
+		case i := <-latency_chan:
+			latency = append(latency, i)
+		case <-resetLat_chan:
+			latency = latency[:0]
+		}
+	}
 }
 
 func randMsg(m []rune, generator *rand.Rand) string {
@@ -72,7 +85,7 @@ func sendWorker(c kafka.Client) {
 	case true:
 		for {
 			randMsg(msg, generator)
-			incrSent()	
+			incrSent()
 		}
 	default:
 		for {
@@ -85,7 +98,7 @@ func sendWorker(c kafka.Client) {
 				fmt.Println(err)
 			} else {
 				incrSent()
-				latency = append(latency, time.Since(start).Seconds()*1000)
+				latency_chan <- time.Since(start).Seconds() * 1000
 			}
 		}
 	}
@@ -126,20 +139,22 @@ func calcLatency() float64 {
 	case true:
 		break
 	default:
-		sort.Float64s(latency)
+		lat := latency
+		resetLat_chan <- true
+		sort.Float64s(lat)
 		var sum float64
-		topn := int(float64(len(latency)) * 0.90)
-		for i := topn; i < len(latency); i++ {
-			sum += latency[i]
+		topn := int(float64(len(lat)) * 0.90)
+		for i := topn; i < len(lat); i++ {
+			sum += lat[i]
 		}
-		avg = sum / float64(len(latency)-topn)
-		latency = latency[:0]
+		avg = sum / float64(len(lat)-topn)
 	}
 	return avg
 }
 
 func main() {
 	signal.Notify(sig_chan, syscall.SIGINT, syscall.SIGTERM)
+	go latencyAggregator()
 	fmt.Printf("\n::: Sangrenel :::\nStarting %s workers\nMessage size %s bytes\n\n",
 		strconv.Itoa(*clientWorkers),
 		strconv.Itoa(*msgSize))
@@ -150,7 +165,7 @@ func main() {
 	for {
 		select {
 		case <-tick:
-				sentCnt := fetchSent()
+			sentCnt := fetchSent()
 			fmt.Printf("%s Producing %s raw data @ %d messages/sec | topic: %s | %.2fms avg latency\n",
 				time.Now().Format(time.RFC3339),
 				calcOutput(sentCnt),
