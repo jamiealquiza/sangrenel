@@ -166,7 +166,7 @@ func main() {
 		select {
 		case <-tick:
 			sentCnt := fetchSent()
-			fmt.Printf("%s Producing %s raw data @ %d messages/sec | topic: %s | %.2fms avg latency\n",
+			fmt.Printf("%s Generating %s @ %d messages/sec | topic: %s | %.2fms avg latency\n",
 				time.Now().Format(time.RFC3339),
 				calcOutput(sentCnt),
 				sentCnt/5,
