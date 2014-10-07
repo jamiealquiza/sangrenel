@@ -24,8 +24,8 @@ var (
 	latency         []float64
 	clientWorkers   *int
 	noop            *bool
-	sentCounter     int
 	chars           = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890!@#$%^&*(){}][:<>.")
+	sentCntr	= make(chan int, 1)
 )
 
 func init() {
@@ -36,7 +36,19 @@ func init() {
 	clientWorkers = flag.Int("workers", 1, "Number of Kafka client workers")
 	flag.Parse()
 	brokers = strings.Split(*flag_brokers, ",")
+	sentCntr <- 0
 	runtime.GOMAXPROCS(runtime.NumCPU())
+}
+
+func incrSent() {
+	i := <- sentCntr
+	sentCntr <- i+1
+}
+
+func fetchSent() int {
+	i := <- sentCntr
+	sentCntr <- 0
+	return i
 }
 
 func randMsg(m []rune, generator *rand.Rand) string {
@@ -60,7 +72,7 @@ func sendWorker(c kafka.Client) {
 	case true:
 		for {
 			randMsg(msg, generator)
-			sentCounter++
+			incrSent()	
 		}
 	default:
 		for {
@@ -72,7 +84,7 @@ func sendWorker(c kafka.Client) {
 			if err != nil {
 				fmt.Println(err)
 			} else {
-				sentCounter++
+				incrSent()
 				latency = append(latency, time.Since(start).Seconds()*1000)
 			}
 		}
@@ -138,13 +150,13 @@ func main() {
 	for {
 		select {
 		case <-tick:
+				sentCnt := fetchSent()
 			fmt.Printf("%s Producing %s raw data @ %d messages/sec | topic: %s | %.2fms avg latency\n",
 				time.Now().Format(time.RFC3339),
-				calcOutput(sentCounter),
-				sentCounter/5,
+				calcOutput(sentCnt),
+				sentCnt/5,
 				*topic,
 				calcLatency())
-			sentCounter = 0
 		case <-sig_chan:
 			fmt.Println()
 			for i := 0; i < *clientWorkers; i++ {
