@@ -101,12 +101,12 @@ func sendWorker(c kafka.Client) {
 			// Message rate limit works by having
 			// all producer worker loops incrementing
 			// a global counter and tracking
-			// the aggregate per-second progress delta.
+			// the aggregate per-second progress.
 			// If the configured rate is met, the worker will sleep
 			// for the remainder of the 1 second window.
 			rateStart := time.Now().Add(time.Second)
 			countStart := fetchSent()
-			// 'start' a time marker to track ack latency
+			// 'start' is a time marker to track ack latency
 			var start time.Time
 			for fetchSent()-countStart < *msgRate {
 				// Gen a random message first,
@@ -134,8 +134,8 @@ func sendWorker(c kafka.Client) {
 }
 
 // A connection to a Kafka cluster, manages 5
-// 'sendworker()' (producer instance); these tend to
-// flatline throughput at ~5 producers
+// 'sendworker()' (producer instances); fixed value since
+// these tend to flatline throughput at ~5 producers
 func createClient(n int) {
 	cId := "client_" + strconv.Itoa(n)
 	client, err := kafka.NewClient(cId, brokers, kafka.NewClientConfig())
@@ -155,7 +155,7 @@ func createClient(n int) {
 	client.Close()
 }
 
-// Calculats raw message output in
+// Calculates raw message output in
 // networking friendly units; gives an idea of
 // minimum network traffic being generated
 func calcOutput(n int64) string {
