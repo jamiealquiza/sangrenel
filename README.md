@@ -56,3 +56,19 @@ GOMAXPROCS=32 / 32 workers / 3500 byte message size: ~125,000 messages/sec
 GOMAXPROCS=32 / 32 workers / 300 byte message size: ~1.38M messages/sec
 
 ![ScreenShot](http://us-east.manta.joyent.com/jalquiza/public/github/sangrenel.png)
+
+### Docker
+
+```
+$ docker run x/sangrenel
+Usage of /home/gocode/bin/sangrenel:
+  -brokers="localhost:9092": Comma delimited list of Kafka brokers
+  -noop=false: Test message generation performance, do not transmit messages
+  -rate=100000000: Apply a global message rate limit
+  -size=300: Message size in bytes
+  -topic="sangrenel": Topic to publish to
+  -workers=1: Number of Kafka client workers
+
+$ docker run x/sangrenel -brokers="localhost:9092" -workers=8
+...
+```
