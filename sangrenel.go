@@ -77,7 +77,7 @@ func fetchSent() int64 {
 
 // A producer instance of a parent Kafka client connection
 func sendWorker(c kafka.Client) {
-	producer, err := kafka.NewProducer(&c, nil)
+	producer, err := kafka.NewSimpleProducer(&c, *topic, nil)
 	if err != nil {
 		fmt.Println(err.Error())
 	}
@@ -114,9 +114,7 @@ func sendWorker(c kafka.Client) {
 				// then start the latency clock to ensure
 				// transmit -> broker ack time is metered
 				start = time.Now()
-				err = producer.SendMessage(*topic,
-					nil,
-					kafka.StringEncoder(data))
+				err = producer.SendMessage(nil, kafka.StringEncoder(data))
 				if err != nil {
 					fmt.Println(err)
 				} else {
