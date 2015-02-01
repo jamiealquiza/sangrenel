@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/eapache/go-resiliency/breaker"
+	"github.com/jamiealquiza/sangrenel/vendor/github.com/eapache/go-resiliency/breaker"
 )
 
 func forceFlushThreshold() int {
