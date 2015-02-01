@@ -1,9 +1,30 @@
+// The MIT License (MIT)
+//
+// Copyright (c) 2014 Jamie Alquiza
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 package main
 
 import (
 	"flag"
 	"fmt"
-	kafka "github.com/Shopify/sarama"
+	kafka "github.com/jamiealquiza/sangrenel/vendor/github.com/Shopify/sarama"
 	"math/rand"
 	"os"
 	"os/signal"
@@ -16,7 +37,7 @@ import (
 )
 
 var (
-	// Control chans
+	// Control chans.
 	sig_chan        = make(chan os.Signal)
 	clientKill_chan = make(chan bool, 24)
 	// Init config vars
@@ -26,7 +47,7 @@ var (
 	msgRate       *int64
 	clientWorkers *int
 	noop          *bool
-	// Character selection from which random messages are generated
+	// Character selection from which random messages are generated.
 	chars = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890!@#$%^&*(){}][:<>.")
 	// Counters / misc.
 	sentCntr      = make(chan int64, 1)
@@ -52,7 +73,7 @@ func init() {
 
 // Returns a random message generated from
 // the 'chars' rune set, of 'm' length in bytes as defined
-// by ''*msgSize'
+// by ''*msgSize'.
 func randMsg(m []rune, generator *rand.Rand) string {
 	for i := range m {
 		m[i] = chars[generator.Intn(len(chars))]
@@ -60,102 +81,107 @@ func randMsg(m []rune, generator *rand.Rand) string {
 	return string(m)
 }
 
-// Thread-safe global counter function via
-// buffered channel with capacity of 1
+// Thread-safe global counter function.
 func incrSent() {
 	i := <-sentCntr
 	sentCntr <- i + 1
 }
 
-// Fetch counter val from channel
-// then reload into buffer
+// Fetch counter val.
 func fetchSent() int64 {
 	i := <-sentCntr
 	sentCntr <- i
 	return i
 }
 
-// A producer instance of a parent Kafka client connection
+func genMsgs() {
+	// Instantiate 'rand' per producer to avoid
+	// mutex contention on a globally shared object.
+	source := rand.NewSource(time.Now().UnixNano())
+	generator := rand.New(source)
+	// 'msg' object reuse
+	msg := make([]rune, *msgSize)
+	for {
+		randMsg(msg, generator)
+		incrSent()
+	}
+}
+
+// A producer instance of a parent Kafka client connection.
 func sendWorker(c kafka.Client) {
-	producer, err := kafka.NewSimpleProducer(&c, *topic, nil)
+	producer, err := kafka.NewSimpleProducer(&c, nil)
 	if err != nil {
 		fmt.Println(err.Error())
 	}
 	defer producer.Close()
 
 	// Instantiate 'rand' per producer to avoid
-	// mutex contention of a globally shared object
+	// mutex contention of a globally shared object.
 	source := rand.NewSource(time.Now().UnixNano())
 	generator := rand.New(source)
-	// 'msg' object reuse
+	// 'msg' object reuse.
 	msg := make([]rune, *msgSize)
 
-	switch *noop {
-	case true:
-		for {
-			randMsg(msg, generator)
-			incrSent()
-		}
-	default:
-		for {
-			// Message rate limit works by having
-			// all producer worker loops incrementing
-			// a global counter and tracking
-			// the aggregate per-second progress.
-			// If the configured rate is met, the worker will sleep
-			// for the remainder of the 1 second window.
-			rateStart := time.Now().Add(time.Second)
-			countStart := fetchSent()
-			// 'start' is a time marker to track ack latency
-			var start time.Time
-			for fetchSent()-countStart < *msgRate {
-				// Gen a random message first,
-				data := randMsg(msg, generator)
-				// then start the latency clock to ensure
-				// transmit -> broker ack time is metered
-				start = time.Now()
-				err = producer.SendMessage(nil, kafka.StringEncoder(data))
-				if err != nil {
-					fmt.Println(err)
-				} else {
-					// Increment global sent count and fire off
-					// time delta since 'start' into the latency chan
-					incrSent()
-					latency_chan <- time.Since(start).Seconds() * 1000
-				}
+	for {
+		// Message rate limit works by having
+		// all producer worker loops incrementing
+		// a global counter and tracking
+		// the aggregate per-second progress.
+		// If the configured rate is met, the worker will sleep
+		// for the remainder of the 1 second window.
+		rateStart := time.Now().Add(time.Second)
+		countStart := fetchSent()
+		// 'start' is a time marker to track ack latency.
+		var start time.Time
+		for fetchSent()-countStart < *msgRate {
+			// Gen a random message first,
+			data := randMsg(msg, generator)
+			// then start the latency clock to ensure
+			// transmit -> broker ack time is metered.
+			start = time.Now()
+			err = producer.SendMessage(*topic, nil, kafka.StringEncoder(data))
+			if err != nil {
+				fmt.Println(err)
+			} else {
+				// Increment global sent count and fire off
+				// time delta since 'start' into the latency chan.
+				incrSent()
+				latency_chan <- time.Since(start).Seconds() * 1000
 			}
-			// If the global per-second rate limit was met, the inner loop
-			// breaks and the outer loop sleeps for the second remainder
-			time.Sleep(rateStart.Sub(time.Now()) + time.Since(start))
 		}
+		// If the global per-second rate limit was met, the inner loop
+		// breaks and the outer loop sleeps for the second remainder.
+		time.Sleep(rateStart.Sub(time.Now()) + time.Since(start))
 	}
 }
 
 // A connection to a Kafka cluster, manages 5
 // 'sendworker()' (producer instances); fixed value since
-// these tend to flatline throughput at ~5 producers
+// these tend to flatline throughput at ~5 producers.
 func createClient(n int) {
-	cId := "client_" + strconv.Itoa(n)
-	client, err := kafka.NewClient(cId, brokers, kafka.NewClientConfig())
-	if err != nil {
-		panic(err)
-	} else {
-		fmt.Printf("%s connected\n", cId)
-	}
-
-	for i := 0; i < 5; i++ {
-		go sendWorker(*client)
+	switch *noop {
+	case false:
+		cId := "client_" + strconv.Itoa(n)
+		client, err := kafka.NewClient(cId, brokers, kafka.NewClientConfig())
+		if err != nil {
+			panic(err)
+		} else {
+			fmt.Printf("%s connected\n", cId)
+		}
+		for i := 0; i < 5; i++ {
+			go sendWorker(*client)
+		}
+	default:
+		for i := 0; i < 5; i++ {
+			go genMsgs()
+		}
 	}
 	<-clientKill_chan
-	// We don't gracefully close producers
-	// so we don't have to wait for a large
-	// number of in-flight messages to complete
-	client.Close()
 }
 
 // Calculates raw message output in
 // networking friendly units; gives an idea of
-// minimum network traffic being generated
+// minimum network traffic being generated.
 func calcOutput(n int64) string {
 	m := (float64(n) / 5) * float64(*msgSize)
 	var o string
@@ -208,23 +234,23 @@ func calcLatency() float64 {
 }
 
 func main() {
-	// Listens for signals
+	// Listens for signals.
 	signal.Notify(sig_chan, syscall.SIGINT, syscall.SIGTERM)
-	// Fires up 'latencyAggregator()' to background
+	// Fires up 'latencyAggregator()' to background.
 	go latencyAggregator()
 
-	// Warns you stuff is happening
+	// Warns you stuff is happening.
 	fmt.Printf("\n::: Sangrenel :::\nStarting %s workers\nMessage size %s bytes\n\n",
 		strconv.Itoa(*clientWorkers),
 		strconv.Itoa(*msgSize))
-	// Fires up clients
+	// Fires up clients.
 	for i := 0; i < *clientWorkers; i++ {
 		go createClient(i + 1)
 	}
 
-	// Info output ticker
+	// Info output ticker.
 	tick := time.Tick(5 * time.Second)
-	// Markers for tracking message rates
+	// Markers for tracking message rates.
 	var currCnt, lastCnt int64
 	for {
 		select {
@@ -241,7 +267,7 @@ func main() {
 				// Well, this technically appends a
 				// latency to the 5s interval.
 				calcLatency())
-		// The Chuck Norris of signals; it doesn't sleep, it waits
+		// The Chuck Norris of signals; it doesn't sleep, it waits.
 		case <-sig_chan:
 			fmt.Println("Killing Connections")
 			for i := 0; i < *clientWorkers; i++ {

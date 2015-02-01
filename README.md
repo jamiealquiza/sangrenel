@@ -3,7 +3,15 @@ sangrenel
 
 "...basically a cloth bag filled with small jagged pieces of scrap iron"
 
-NOTE: Sangrenel has a dependency on Shopify's Sarama Kafka client, which tends to change often. Subsequently, I have moved to managing this dependency as a local copy in the Sangrenel repo in accordance with the officially recommended Golang [guidance](http://golang.org/doc/faq#get_version). These changes are currently reflected in the Sangrenel 'dev' branch and are recommended if you'd prefer an easy time building Sangrenel. These changes will be merged into master pending some testing.
+### Installation
+NOTE: Sangrenel has a dependency on Shopify's Sarama Kafka client, which tends to change often. Subsequently, I have moved to managing this dependency as a local copy in the Sangrenel repo in accordance with the officially recommended Golang [guidance](http://golang.org/doc/faq#get_version)
+
+Assuming Go is installed (tested up to version 1.4.1) and $GOPATH is set:
+
+- `go get github.com/jamiealquiza/sangrenel`
+- `go build github.com/jamiealquiza/sangrenel`
+
+Binary will be found at `$GOPATH/bin/sangrenel`
 
 ### Overview
 
