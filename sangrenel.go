@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	kafka "github.com/Shopify/sarama"
 	"math/rand"
 	"os"
 	"os/signal"
@@ -13,6 +12,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	kafka "github.com/Shopify/sarama"
 )
 
 var (
@@ -29,10 +30,11 @@ var (
 	// Character selection from which random messages are generated
 	chars = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890!@#$%^&*(){}][:<>.")
 	// Counters / misc.
-	sentCntr      = make(chan int64, 1)
-	latency       []float64
-	latency_chan  = make(chan float64, 1)
-	resetLat_chan = make(chan bool, 1)
+	sentCntr       = make(chan int64, 1)
+	latency        []float64
+	latency_chan   = make(chan float64, 1)
+	resetLat_chan  = make(chan bool, 1)
+	producerConfig = kafka.NewProducerConfig()
 )
 
 func init() {
@@ -77,7 +79,7 @@ func fetchSent() int64 {
 
 // A producer instance of a parent Kafka client connection
 func sendWorker(c kafka.Client) {
-	producer, err := kafka.NewSimpleProducer(&c, *topic, nil)
+	producer, err := kafka.NewSimpleProducer(&c, producerConfig)
 	if err != nil {
 		fmt.Println(err.Error())
 	}
@@ -114,7 +116,7 @@ func sendWorker(c kafka.Client) {
 				// then start the latency clock to ensure
 				// transmit -> broker ack time is metered
 				start = time.Now()
-				err = producer.SendMessage(nil, kafka.StringEncoder(data))
+				err = producer.SendMessage(*topic, nil, kafka.StringEncoder(data))
 				if err != nil {
 					fmt.Println(err)
 				} else {
