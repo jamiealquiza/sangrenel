@@ -89,6 +89,11 @@ func clientWorker(c kafka.Client) {
 	// Create msg object once, reuse.
 	msg := make([]rune, msgSize)
 
+	// Use a local accumulator then periodically update global counter.
+	// Global counter can become a bottleneck with too many threads.
+	tick := time.Tick(1 * time.Second)
+	var n int64
+
 	for {
 		// Message rate limit works by having all clientWorker loops incrementing
 		// a global counter and tracking the aggregate per-second progress.
@@ -107,7 +112,14 @@ func clientWorker(c kafka.Client) {
 				fmt.Println(err)
 			} else {
 				// Increment global sent count and fire off time since start value into the latency channel.
-				incrSent()
+				n++
+				select {
+				case <-tick:
+					incrSent(n)
+					n = 0
+				default:
+					break
+				}
 				latency_chan <- time.Since(start).Seconds() * 1000
 			}
 		}
@@ -152,10 +164,21 @@ func genMsgs() {
 	generator := rand.New(source)
 	// Define msg objet once, reuse.
 	msg := make([]rune, msgSize)
+
+	tick := time.Tick(1 * time.Second)
+	var n int64
+
 	for {
 		// Generate a random message and increment the global counter.
 		randMsg(msg, *generator)
-		incrSent()
+		n++
+		select {
+		case <-tick:
+			incrSent(n)
+			n = 0
+		default:
+			break
+		}
 	}
 }
 
@@ -169,9 +192,9 @@ func randMsg(m []rune, generator rand.Rand) string {
 }
 
 // Thread-safe global counter functions.
-func incrSent() {
+func incrSent(n int64) {
 	i := <-sentCntr
-	sentCntr <- i + 1
+	sentCntr <- i + n
 }
 func fetchSent() int64 {
 	i := <-sentCntr
