@@ -91,7 +91,7 @@ func clientWorker(c kafka.Client) {
 
 	// Use a local accumulator then periodically update global counter.
 	// Global counter can become a bottleneck with too many threads.
-	tick := time.Tick(1 * time.Second)
+	tick := time.Tick(50 * time.Millisecond)
 	var n int64
 
 	for {
@@ -165,7 +165,7 @@ func genMsgs() {
 	// Define msg objet once, reuse.
 	msg := make([]rune, msgSize)
 
-	tick := time.Tick(1 * time.Second)
+	tick := time.Tick(50 * time.Millisecond)
 	var n int64
 
 	for {
