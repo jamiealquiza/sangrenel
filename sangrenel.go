@@ -47,7 +47,7 @@ var (
 	noop          bool
 
 	// Character selection from which random messages are generated.
-	chars = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890!@#$%^&*(){}][:<>.")
+	chars = []byte("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890!@#$%^&*(){}][:<>.")
 
 	// Counters / misc.
 	sig_chan        = make(chan os.Signal)
@@ -87,7 +87,7 @@ func clientWorker(c kafka.Client) {
 	source := rand.NewSource(time.Now().UnixNano())
 	generator := rand.New(source)
 	// Create msg object once, reuse.
-	msg := make([]rune, msgSize)
+	msg := make([]byte, msgSize)
 
 	// Use a local accumulator then periodically update global counter.
 	// Global counter can become a bottleneck with too many threads.
@@ -107,7 +107,7 @@ func clientWorker(c kafka.Client) {
 			// We start timing after the message is created.
 			// This ensures latency metering from the time between message sent and receiving an ack.
 			start = time.Now()
-			err = producer.SendMessage(topic, nil, kafka.StringEncoder(data))
+			err = producer.SendMessage(topic, nil, kafka.ByteEncoder(data))
 			if err != nil {
 				fmt.Println(err)
 			} else {
@@ -126,6 +126,32 @@ func clientWorker(c kafka.Client) {
 		// If the global per-second rate limit was met,
 		// the inner loop breaks and the outer loop sleeps for the second remainder.
 		time.Sleep(rateEnd.Sub(time.Now()) + time.Since(start))
+	}
+}
+
+// clientDummyWorker is a dummy function that kafkaClient calls if noop is True.
+// It is used in place of starting actual Kafka client connections to test message creation performance.
+func clientDummyWorker() {
+	// Instantiate 'rand' per producer to avoid mutex contention.
+	source := rand.NewSource(time.Now().UnixNano())
+	generator := rand.New(source)
+	// Define msg objet once, reuse.
+	msg := make([]byte, msgSize)
+
+	tick := time.Tick(50 * time.Millisecond)
+	var n int64
+
+	for {
+		// Generate a random message and increment the global counter.
+		randMsg(msg, *generator)
+		n++
+		select {
+		case <-tick:
+			incrSent(n)
+			n = 0
+		default:
+			break
+		}
 	}
 }
 
@@ -150,45 +176,19 @@ func kafkaClient(n int) {
 	// Just generate messages and burn CPU.
 	default:
 		for i := 0; i < 5; i++ {
-			go genMsgs()
+			go clientDummyWorker()
 		}
 	}
 	<-clientKill_chan
 }
 
-// genMsgs is a dummy function that kafkaClient calls if noop is True.
-// It is used in place of starting actual Kafka client connections to test message creation performance.
-func genMsgs() {
-	// Instantiate 'rand' per producer to avoid mutex contention.
-	source := rand.NewSource(time.Now().UnixNano())
-	generator := rand.New(source)
-	// Define msg objet once, reuse.
-	msg := make([]rune, msgSize)
-
-	tick := time.Tick(50 * time.Millisecond)
-	var n int64
-
-	for {
-		// Generate a random message and increment the global counter.
-		randMsg(msg, *generator)
-		n++
-		select {
-		case <-tick:
-			incrSent(n)
-			n = 0
-		default:
-			break
-		}
-	}
-}
-
-// Returns a random message generated from the chars rune slice.
+// Returns a random message generated from the chars byte slice.
 // Message length of m bytes as defined by msgSize.
-func randMsg(m []rune, generator rand.Rand) string {
+func randMsg(m []byte, generator rand.Rand) []byte {
 	for i := range m {
 		m[i] = chars[generator.Intn(len(chars))]
 	}
-	return string(m)
+	return m
 }
 
 // Thread-safe global counter functions.
