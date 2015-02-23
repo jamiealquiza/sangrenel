@@ -86,12 +86,13 @@ func clientWorker(c kafka.Client) {
 	// Instantiate rand per producer to avoid mutex contention.
 	source := rand.NewSource(time.Now().UnixNano())
 	generator := rand.New(source)
+
 	// Create msg object once, reuse.
 	msg := make([]byte, msgSize)
 
 	// Use a local accumulator then periodically update global counter.
 	// Global counter can become a bottleneck with too many threads.
-	tick := time.Tick(50 * time.Millisecond)
+	tick := time.Tick(10 * time.Millisecond)
 	var n int64
 
 	for {
@@ -103,11 +104,11 @@ func clientWorker(c kafka.Client) {
 		countStart := fetchSent()
 		var start time.Time
 		for fetchSent()-countStart < msgRate {
-			data := randMsg(msg, *generator)
+			randMsg(msg, *generator)
 			// We start timing after the message is created.
 			// This ensures latency metering from the time between message sent and receiving an ack.
 			start = time.Now()
-			err = producer.SendMessage(topic, nil, kafka.ByteEncoder(data))
+			err = producer.SendMessage(topic, nil, kafka.ByteEncoder(msg))
 			if err != nil {
 				fmt.Println(err)
 			} else {
@@ -135,10 +136,11 @@ func clientDummyWorker() {
 	// Instantiate 'rand' per producer to avoid mutex contention.
 	source := rand.NewSource(time.Now().UnixNano())
 	generator := rand.New(source)
+
 	// Define msg objet once, reuse.
 	msg := make([]byte, msgSize)
 
-	tick := time.Tick(50 * time.Millisecond)
+	tick := time.Tick(10 * time.Millisecond)
 	var n int64
 
 	for {
@@ -184,11 +186,10 @@ func kafkaClient(n int) {
 
 // Returns a random message generated from the chars byte slice.
 // Message length of m bytes as defined by msgSize.
-func randMsg(m []byte, generator rand.Rand) []byte {
+func randMsg(m []byte, generator rand.Rand) {
 	for i := range m {
 		m[i] = chars[generator.Intn(len(chars))]
 	}
-	return m
 }
 
 // Thread-safe global counter functions.
