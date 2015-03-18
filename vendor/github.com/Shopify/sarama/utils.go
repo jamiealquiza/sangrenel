@@ -1,9 +1,6 @@
 package sarama
 
-import (
-	"io"
-	"sort"
-)
+import "sort"
 
 type none struct{}
 
@@ -45,11 +42,11 @@ func withRecover(fn func()) {
 	fn()
 }
 
-func safeAsyncClose(c io.Closer) {
-	tmp := c // local var prevents clobbering in goroutine
+func safeAsyncClose(b *Broker) {
+	tmp := b // local var prevents clobbering in goroutine
 	go withRecover(func() {
 		if err := tmp.Close(); err != nil {
-			Logger.Println("Error closing", tmp, ":", err)
+			Logger.Println("Error closing broker", tmp.ID(), ":", err)
 		}
 	})
 }
@@ -65,8 +62,8 @@ type Encoder interface {
 // make strings and byte slices encodable for convenience so they can be used as keys
 // and/or values in kafka messages
 
-// StringEncoder implements the Encoder interface for Go strings so that you can do things like
-//	producer.SendMessage(nil, sarama.StringEncoder("hello world"))
+// StringEncoder implements the Encoder interface for Go strings so that they can be used
+// as the Key or Value in a ProducerMessage.
 type StringEncoder string
 
 func (s StringEncoder) Encode() ([]byte, error) {
@@ -77,8 +74,8 @@ func (s StringEncoder) Length() int {
 	return len(s)
 }
 
-// ByteEncoder implements the Encoder interface for Go byte slices so that you can do things like
-//	producer.SendMessage(nil, sarama.ByteEncoder([]byte{0x00}))
+// ByteEncoder implements the Encoder interface for Go byte slices so that they can be used
+// as the Key or Value in a ProducerMessage.
 type ByteEncoder []byte
 
 func (b ByteEncoder) Encode() ([]byte, error) {

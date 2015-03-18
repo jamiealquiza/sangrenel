@@ -7,11 +7,11 @@ import (
 	"time"
 )
 
-// Partitioner is anything that, given a Kafka message key and a number of partitions indexed [0...numPartitions-1],
+// Partitioner is anything that, given a Kafka message and a number of partitions indexed [0...numPartitions-1],
 // decides to which partition to send the message. RandomPartitioner, RoundRobinPartitioner and HashPartitioner are provided
 // as simple default implementations.
 type Partitioner interface {
-	Partition(key Encoder, numPartitions int32) (int32, error) // Partition takes the key and partition count and chooses a partition
+	Partition(message *ProducerMessage, numPartitions int32) (int32, error) // Partition takes a message and partition count and chooses a partition
 
 	// RequiresConsistency indicates to the user of the partitioner whether the mapping of key->partition is consistent or not.
 	// Specifically, if a partitioner requires consistency then it must be allowed to choose from all partitions (even ones known to
@@ -20,37 +20,53 @@ type Partitioner interface {
 }
 
 // PartitionerConstructor is the type for a function capable of constructing new Partitioners.
-type PartitionerConstructor func() Partitioner
+type PartitionerConstructor func(topic string) Partitioner
 
-// RandomPartitioner implements the Partitioner interface by choosing a random partition each time.
-type RandomPartitioner struct {
+type manualPartitioner struct{}
+
+// NewManualPartitioner returns a Partitioner which uses the partition manually set in the provided
+// ProducerMessage's Partition field as the partition to produce to.
+func NewManualPartitioner(topic string) Partitioner {
+	return new(manualPartitioner)
+}
+
+func (p *manualPartitioner) Partition(message *ProducerMessage, numPartitions int32) (int32, error) {
+	return message.Partition, nil
+}
+
+func (p *manualPartitioner) RequiresConsistency() bool {
+	return true
+}
+
+type randomPartitioner struct {
 	generator *rand.Rand
 }
 
-func NewRandomPartitioner() Partitioner {
-	p := new(RandomPartitioner)
+// NewRandomPartitioner returns a Partitioner which chooses a random partition each time.
+func NewRandomPartitioner(topic string) Partitioner {
+	p := new(randomPartitioner)
 	p.generator = rand.New(rand.NewSource(time.Now().UTC().UnixNano()))
 	return p
 }
 
-func (p *RandomPartitioner) Partition(key Encoder, numPartitions int32) (int32, error) {
+func (p *randomPartitioner) Partition(message *ProducerMessage, numPartitions int32) (int32, error) {
 	return int32(p.generator.Intn(int(numPartitions))), nil
 }
 
-func (p *RandomPartitioner) RequiresConsistency() bool {
+func (p *randomPartitioner) RequiresConsistency() bool {
 	return false
 }
 
-// RoundRobinPartitioner implements the Partitioner interface by walking through the available partitions one at a time.
-type RoundRobinPartitioner struct {
+type roundRobinPartitioner struct {
 	partition int32
 }
 
-func NewRoundRobinPartitioner() Partitioner {
-	return &RoundRobinPartitioner{}
+// NewRoundRobinPartitioner returns a Partitioner which walks through the available partitions one at a time.
+func NewRoundRobinPartitioner(topic string) Partitioner {
+	return &roundRobinPartitioner{}
 }
 
-func (p *RoundRobinPartitioner) Partition(key Encoder, numPartitions int32) (int32, error) {
+func (p *roundRobinPartitioner) Partition(message *ProducerMessage, numPartitions int32) (int32, error) {
 	if p.partition >= numPartitions {
 		p.partition = 0
 	}
@@ -59,30 +75,31 @@ func (p *RoundRobinPartitioner) Partition(key Encoder, numPartitions int32) (int
 	return ret, nil
 }
 
-func (p *RoundRobinPartitioner) RequiresConsistency() bool {
+func (p *roundRobinPartitioner) RequiresConsistency() bool {
 	return false
 }
 
-// HashPartitioner implements the Partitioner interface. If the key is nil, or fails to encode, then a random partition
-// is chosen. Otherwise the FNV-1a hash of the encoded bytes is used modulus the number of partitions. This ensures that messages
-// with the same key always end up on the same partition.
-type HashPartitioner struct {
+type hashPartitioner struct {
 	random Partitioner
 	hasher hash.Hash32
 }
 
-func NewHashPartitioner() Partitioner {
-	p := new(HashPartitioner)
-	p.random = NewRandomPartitioner()
+// NewHashPartitioner returns a Partitioner which behaves as follows. If the message's key is nil, or fails to
+// encode, then a random partition is chosen. Otherwise the FNV-1a hash of the encoded bytes of the message key
+// is used, modulus the number of partitions. This ensures that messages with the same key always end up on the
+// same partition.
+func NewHashPartitioner(topic string) Partitioner {
+	p := new(hashPartitioner)
+	p.random = NewRandomPartitioner(topic)
 	p.hasher = fnv.New32a()
 	return p
 }
 
-func (p *HashPartitioner) Partition(key Encoder, numPartitions int32) (int32, error) {
-	if key == nil {
-		return p.random.Partition(key, numPartitions)
+func (p *hashPartitioner) Partition(message *ProducerMessage, numPartitions int32) (int32, error) {
+	if message.Key == nil {
+		return p.random.Partition(message, numPartitions)
 	}
-	bytes, err := key.Encode()
+	bytes, err := message.Key.Encode()
 	if err != nil {
 		return -1, err
 	}
@@ -98,19 +115,6 @@ func (p *HashPartitioner) Partition(key Encoder, numPartitions int32) (int32, er
 	return hash % numPartitions, nil
 }
 
-func (p *HashPartitioner) RequiresConsistency() bool {
-	return true
-}
-
-// ConstantPartitioner implements the Partitioner interface by just returning a constant value.
-type ConstantPartitioner struct {
-	Constant int32
-}
-
-func (p *ConstantPartitioner) Partition(key Encoder, numPartitions int32) (int32, error) {
-	return p.Constant, nil
-}
-
-func (p *ConstantPartitioner) RequiresConsistency() bool {
+func (p *hashPartitioner) RequiresConsistency() bool {
 	return true
 }

@@ -6,55 +6,21 @@ import (
 	"net"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 )
-
-// BrokerConfig is used to pass multiple configuration options to Broker.Open.
-type BrokerConfig struct {
-	MaxOpenRequests int           // How many outstanding requests the broker is allowed to have before blocking attempts to send.
-	DialTimeout     time.Duration // How long to wait for the initial connection to succeed before timing out and returning an error.
-	ReadTimeout     time.Duration // How long to wait for a response before timing out and returning an error.
-	WriteTimeout    time.Duration // How long to wait for a transmit to succeed before timing out and returning an error.
-}
-
-// NewBrokerConfig returns a new broker configuration with sane defaults.
-func NewBrokerConfig() *BrokerConfig {
-	return &BrokerConfig{
-		MaxOpenRequests: 4,
-		DialTimeout:     1 * time.Minute,
-		ReadTimeout:     1 * time.Minute,
-		WriteTimeout:    1 * time.Minute,
-	}
-}
-
-// Validate checks a BrokerConfig instance. This will return a
-// ConfigurationError if the specified values don't make sense.
-func (config *BrokerConfig) Validate() error {
-	if config.MaxOpenRequests < 0 {
-		return ConfigurationError("Invalid MaxOpenRequests")
-	}
-
-	if config.ReadTimeout <= 0 {
-		return ConfigurationError("Invalid ReadTimeout")
-	}
-
-	if config.WriteTimeout <= 0 {
-		return ConfigurationError("Invalid WriteTimeout")
-	}
-
-	return nil
-}
 
 // Broker represents a single Kafka broker connection. All operations on this object are entirely concurrency-safe.
 type Broker struct {
 	id   int32
 	addr string
 
-	conf          *BrokerConfig
+	conf          *Config
 	correlationID int32
 	conn          net.Conn
 	connErr       error
 	lock          sync.Mutex
+	opened        int32
 
 	responses chan responsePromise
 	done      chan bool
@@ -72,14 +38,14 @@ func NewBroker(addr string) *Broker {
 	return &Broker{id: -1, addr: addr}
 }
 
-// Open tries to connect to the Broker. It takes the broker lock synchronously, then spawns a goroutine which
-// connects and releases the lock. This means any subsequent operations on the broker will block waiting for
-// the connection to finish. To get the effect of a fully synchronous Open call, follow it by a call to Connected().
-// The only errors Open will return directly are ConfigurationError or AlreadyConnected. If conf is nil, the result of
-// NewBrokerConfig() is used.
-func (b *Broker) Open(conf *BrokerConfig) error {
+// Open tries to connect to the Broker if it is not already connected or connecting, but does not block
+// waiting for the connection to complete. This means that any subsequent operations on the broker will
+// block waiting for the connection to succeed or fail. To get the effect of a fully synchronous Open call,
+// follow it by a call to Connected(). The only errors Open will return directly are ConfigurationError or
+// AlreadyConnected. If conf is nil, the result of NewConfig() is used.
+func (b *Broker) Open(conf *Config) error {
 	if conf == nil {
-		conf = NewBrokerConfig()
+		conf = NewConfig()
 	}
 
 	err := conf.Validate()
@@ -87,28 +53,32 @@ func (b *Broker) Open(conf *BrokerConfig) error {
 		return err
 	}
 
+	if !atomic.CompareAndSwapInt32(&b.opened, 0, 1) {
+		return ErrAlreadyConnected
+	}
+
 	b.lock.Lock()
 
 	if b.conn != nil {
 		b.lock.Unlock()
-		Logger.Printf("Failed to connect to broker %s\n", b.addr)
-		Logger.Println(AlreadyConnected)
-		return AlreadyConnected
+		Logger.Printf("Failed to connect to broker %s: %s\n", b.addr, ErrAlreadyConnected)
+		return ErrAlreadyConnected
 	}
 
 	go withRecover(func() {
 		defer b.lock.Unlock()
 
-		b.conn, b.connErr = net.DialTimeout("tcp", b.addr, conf.DialTimeout)
+		b.conn, b.connErr = net.DialTimeout("tcp", b.addr, conf.Net.DialTimeout)
 		if b.connErr != nil {
-			Logger.Printf("Failed to connect to broker %s\n", b.addr)
-			Logger.Println(b.connErr)
+			b.conn = nil
+			atomic.StoreInt32(&b.opened, 0)
+			Logger.Printf("Failed to connect to broker %s: %s\n", b.addr, b.connErr)
 			return
 		}
 
 		b.conf = conf
 		b.done = make(chan bool)
-		b.responses = make(chan responsePromise, b.conf.MaxOpenRequests)
+		b.responses = make(chan responsePromise, b.conf.Net.MaxOpenRequests-1)
 
 		Logger.Printf("Connected to broker %s\n", b.addr)
 		go withRecover(b.responseReceiver)
@@ -126,33 +96,33 @@ func (b *Broker) Connected() (bool, error) {
 	return b.conn != nil, b.connErr
 }
 
-func (b *Broker) Close() (err error) {
+func (b *Broker) Close() error {
 	b.lock.Lock()
 	defer b.lock.Unlock()
-	defer func() {
-		if err == nil {
-			Logger.Printf("Closed connection to broker %s\n", b.addr)
-		} else {
-			Logger.Printf("Failed to close connection to broker %s.\n", b.addr)
-			Logger.Println(err)
-		}
-	}()
 
 	if b.conn == nil {
-		return NotConnected
+		return ErrNotConnected
 	}
 
 	close(b.responses)
 	<-b.done
 
-	err = b.conn.Close()
+	err := b.conn.Close()
 
 	b.conn = nil
 	b.connErr = nil
 	b.done = nil
 	b.responses = nil
 
-	return
+	atomic.StoreInt32(&b.opened, 0)
+
+	if err == nil {
+		Logger.Printf("Closed connection to broker %s\n", b.addr)
+	} else {
+		Logger.Printf("Error while closing connection to broker %s: %s\n", b.addr, err)
+	}
+
+	return err
 }
 
 // ID returns the broker ID retrieved from Kafka's metadata, or -1 if that is not known.
@@ -165,10 +135,10 @@ func (b *Broker) Addr() string {
 	return b.addr
 }
 
-func (b *Broker) GetMetadata(clientID string, request *MetadataRequest) (*MetadataResponse, error) {
+func (b *Broker) GetMetadata(request *MetadataRequest) (*MetadataResponse, error) {
 	response := new(MetadataResponse)
 
-	err := b.sendAndReceive(clientID, request, response)
+	err := b.sendAndReceive(request, response)
 
 	if err != nil {
 		return nil, err
@@ -177,10 +147,10 @@ func (b *Broker) GetMetadata(clientID string, request *MetadataRequest) (*Metada
 	return response, nil
 }
 
-func (b *Broker) GetConsumerMetadata(clientID string, request *ConsumerMetadataRequest) (*ConsumerMetadataResponse, error) {
+func (b *Broker) GetConsumerMetadata(request *ConsumerMetadataRequest) (*ConsumerMetadataResponse, error) {
 	response := new(ConsumerMetadataResponse)
 
-	err := b.sendAndReceive(clientID, request, response)
+	err := b.sendAndReceive(request, response)
 
 	if err != nil {
 		return nil, err
@@ -189,10 +159,10 @@ func (b *Broker) GetConsumerMetadata(clientID string, request *ConsumerMetadataR
 	return response, nil
 }
 
-func (b *Broker) GetAvailableOffsets(clientID string, request *OffsetRequest) (*OffsetResponse, error) {
+func (b *Broker) GetAvailableOffsets(request *OffsetRequest) (*OffsetResponse, error) {
 	response := new(OffsetResponse)
 
-	err := b.sendAndReceive(clientID, request, response)
+	err := b.sendAndReceive(request, response)
 
 	if err != nil {
 		return nil, err
@@ -201,15 +171,15 @@ func (b *Broker) GetAvailableOffsets(clientID string, request *OffsetRequest) (*
 	return response, nil
 }
 
-func (b *Broker) Produce(clientID string, request *ProduceRequest) (*ProduceResponse, error) {
+func (b *Broker) Produce(request *ProduceRequest) (*ProduceResponse, error) {
 	var response *ProduceResponse
 	var err error
 
 	if request.RequiredAcks == NoResponse {
-		err = b.sendAndReceive(clientID, request, nil)
+		err = b.sendAndReceive(request, nil)
 	} else {
 		response = new(ProduceResponse)
-		err = b.sendAndReceive(clientID, request, response)
+		err = b.sendAndReceive(request, response)
 	}
 
 	if err != nil {
@@ -219,10 +189,10 @@ func (b *Broker) Produce(clientID string, request *ProduceRequest) (*ProduceResp
 	return response, nil
 }
 
-func (b *Broker) Fetch(clientID string, request *FetchRequest) (*FetchResponse, error) {
+func (b *Broker) Fetch(request *FetchRequest) (*FetchResponse, error) {
 	response := new(FetchResponse)
 
-	err := b.sendAndReceive(clientID, request, response)
+	err := b.sendAndReceive(request, response)
 
 	if err != nil {
 		return nil, err
@@ -231,10 +201,10 @@ func (b *Broker) Fetch(clientID string, request *FetchRequest) (*FetchResponse, 
 	return response, nil
 }
 
-func (b *Broker) CommitOffset(clientID string, request *OffsetCommitRequest) (*OffsetCommitResponse, error) {
+func (b *Broker) CommitOffset(request *OffsetCommitRequest) (*OffsetCommitResponse, error) {
 	response := new(OffsetCommitResponse)
 
-	err := b.sendAndReceive(clientID, request, response)
+	err := b.sendAndReceive(request, response)
 
 	if err != nil {
 		return nil, err
@@ -243,10 +213,10 @@ func (b *Broker) CommitOffset(clientID string, request *OffsetCommitRequest) (*O
 	return response, nil
 }
 
-func (b *Broker) FetchOffset(clientID string, request *OffsetFetchRequest) (*OffsetFetchResponse, error) {
+func (b *Broker) FetchOffset(request *OffsetFetchRequest) (*OffsetFetchResponse, error) {
 	response := new(OffsetFetchResponse)
 
-	err := b.sendAndReceive(clientID, request, response)
+	err := b.sendAndReceive(request, response)
 
 	if err != nil {
 		return nil, err
@@ -255,7 +225,7 @@ func (b *Broker) FetchOffset(clientID string, request *OffsetFetchRequest) (*Off
 	return response, nil
 }
 
-func (b *Broker) send(clientID string, req requestEncoder, promiseResponse bool) (*responsePromise, error) {
+func (b *Broker) send(req requestEncoder, promiseResponse bool) (*responsePromise, error) {
 	b.lock.Lock()
 	defer b.lock.Unlock()
 
@@ -263,16 +233,16 @@ func (b *Broker) send(clientID string, req requestEncoder, promiseResponse bool)
 		if b.connErr != nil {
 			return nil, b.connErr
 		}
-		return nil, NotConnected
+		return nil, ErrNotConnected
 	}
 
-	fullRequest := request{b.correlationID, clientID, req}
+	fullRequest := request{b.correlationID, b.conf.ClientID, req}
 	buf, err := encode(&fullRequest)
 	if err != nil {
 		return nil, err
 	}
 
-	err = b.conn.SetWriteDeadline(time.Now().Add(b.conf.WriteTimeout))
+	err = b.conn.SetWriteDeadline(time.Now().Add(b.conf.Net.WriteTimeout))
 	if err != nil {
 		return nil, err
 	}
@@ -293,8 +263,8 @@ func (b *Broker) send(clientID string, req requestEncoder, promiseResponse bool)
 	return &promise, nil
 }
 
-func (b *Broker) sendAndReceive(clientID string, req requestEncoder, res decoder) error {
-	promise, err := b.send(clientID, req, res != nil)
+func (b *Broker) sendAndReceive(req requestEncoder, res decoder) error {
+	promise, err := b.send(req, res != nil)
 
 	if err != nil {
 		return err
@@ -359,7 +329,7 @@ func (b *Broker) encode(pe packetEncoder) (err error) {
 func (b *Broker) responseReceiver() {
 	header := make([]byte, 8)
 	for response := range b.responses {
-		err := b.conn.SetReadDeadline(time.Now().Add(b.conf.ReadTimeout))
+		err := b.conn.SetReadDeadline(time.Now().Add(b.conf.Net.ReadTimeout))
 		if err != nil {
 			response.errors <- err
 			continue
@@ -380,9 +350,7 @@ func (b *Broker) responseReceiver() {
 		if decodedHeader.correlationID != response.correlationID {
 			// TODO if decoded ID < cur ID, discard until we catch up
 			// TODO if decoded ID > cur ID, save it so when cur ID catches up we have a response
-			response.errors <- DecodingError{
-				Info: fmt.Sprintf("CorrelationID didn't match, wanted %d, got %d", response.correlationID, decodedHeader.correlationID),
-			}
+			response.errors <- PacketDecodingError{fmt.Sprintf("CorrelationID didn't match, wanted %d, got %d", response.correlationID, decodedHeader.correlationID)}
 			continue
 		}
 

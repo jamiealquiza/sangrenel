@@ -21,11 +21,11 @@ func TestConsumerMetadataResponseError(t *testing.T) {
 
 	testDecodable(t, "error", &response, consumerMetadataResponseError)
 
-	if response.Err != OffsetsLoadInProgress {
+	if response.Err != ErrOffsetsLoadInProgress {
 		t.Error("Decoding produced incorrect error value.")
 	}
 
-	if response.CoordinatorId != 0 {
+	if response.CoordinatorID != 0 {
 		t.Error("Decoding produced incorrect ID.")
 	}
 
@@ -43,11 +43,11 @@ func TestConsumerMetadataResponseSuccess(t *testing.T) {
 
 	testDecodable(t, "success", &response, consumerMetadataResponseSuccess)
 
-	if response.Err != NoError {
+	if response.Err != ErrNoError {
 		t.Error("Decoding produced error value where there was none.")
 	}
 
-	if response.CoordinatorId != 0xAB {
+	if response.CoordinatorID != 0xAB {
 		t.Error("Decoding produced incorrect coordinator ID.")
 	}
 

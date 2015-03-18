@@ -1,386 +1,563 @@
 package sarama
 
 import (
+	"fmt"
+	"sync"
 	"time"
 )
 
-// OffsetMethod is passed in ConsumerConfig to tell the consumer how to determine the starting offset.
-type OffsetMethod int
-
-const (
-	// OffsetMethodManual causes the consumer to interpret the OffsetValue in the ConsumerConfig as the
-	// offset at which to start, allowing the user to manually specify their desired starting offset.
-	OffsetMethodManual OffsetMethod = iota
-	// OffsetMethodNewest causes the consumer to start at the most recent available offset, as
-	// determined by querying the broker.
-	OffsetMethodNewest
-	// OffsetMethodOldest causes the consumer to start at the oldest available offset, as
-	// determined by querying the broker.
-	OffsetMethodOldest
-)
-
-// ConsumerConfig is used to pass multiple configuration options to NewConsumer.
-type ConsumerConfig struct {
-	// The default (maximum) amount of data to fetch from the broker in each request. The default is 32768 bytes.
-	DefaultFetchSize int32
-	// The minimum amount of data to fetch in a request - the broker will wait until at least this many bytes are available.
-	// The default is 1, as 0 causes the consumer to spin when no messages are available.
-	MinFetchSize int32
-	// The maximum permittable message size - messages larger than this will return MessageTooLarge. The default of 0 is
-	// treated as no limit.
-	MaxMessageSize int32
-	// The maximum amount of time the broker will wait for MinFetchSize bytes to become available before it
-	// returns fewer than that anyways. The default is 250ms, since 0 causes the consumer to spin when no events are available.
-	// 100-500ms is a reasonable range for most cases. Kafka only supports precision up to milliseconds; nanoseconds will be truncated.
-	MaxWaitTime time.Duration
-
-	// The method used to determine at which offset to begin consuming messages.
-	OffsetMethod OffsetMethod
-	// Interpreted differently according to the value of OffsetMethod.
-	OffsetValue int64
-
-	// The number of events to buffer in the Events channel. Having this non-zero permits the
-	// consumer to continue fetching messages in the background while client code consumes events,
-	// greatly improving throughput. The default is 16.
-	EventBufferSize int
-}
-
-// ConsumerEvent is what is provided to the user when an event occurs. It is either an error (in which case Err is non-nil) or
-// a message (in which case Err is nil and Offset, Key, and Value are set). Topic and Partition are always set.
-type ConsumerEvent struct {
+// ConsumerMessage encapsulates a Kafka message returned by the consumer.
+type ConsumerMessage struct {
 	Key, Value []byte
 	Topic      string
 	Partition  int32
 	Offset     int64
-	Err        error
 }
 
-// Consumer processes Kafka messages from a given topic and partition.
-// You MUST call Close() on a consumer to avoid leaks, it will not be garbage-collected automatically when
-// it passes out of scope (this is in addition to calling Close on the underlying client, which is still necessary).
-type Consumer struct {
-	client *Client
-
-	topic     string
-	partition int32
-	group     string
-	config    ConsumerConfig
-
-	offset        int64
-	broker        *Broker
-	stopper, done chan bool
-	events        chan *ConsumerEvent
+// ConsumerError is what is provided to the user when an error occurs.
+// It wraps an error and includes the topic and partition.
+type ConsumerError struct {
+	Topic     string
+	Partition int32
+	Err       error
 }
 
-// NewConsumer creates a new consumer attached to the given client. It will read messages from the given topic and partition, as
-// part of the named consumer group.
-func NewConsumer(client *Client, topic string, partition int32, group string, config *ConsumerConfig) (*Consumer, error) {
-	// Check that we are not dealing with a closed Client before processing
-	// any other arguments
-	if client.Closed() {
-		return nil, ClosedClient
-	}
+func (ce ConsumerError) Error() string {
+	return fmt.Sprintf("kafka: error while consuming %s/%d: %s", ce.Topic, ce.Partition, ce.Err)
+}
 
-	if config == nil {
-		config = NewConsumerConfig()
-	}
+// ConsumerErrors is a type that wraps a batch of errors and implements the Error interface.
+// It can be returned from the PartitionConsumer's Close methods to avoid the need to manually drain errors
+// when stopping.
+type ConsumerErrors []*ConsumerError
 
-	if err := config.Validate(); err != nil {
-		return nil, err
-	}
+func (ce ConsumerErrors) Error() string {
+	return fmt.Sprintf("kafka: %d errors while consuming", len(ce))
+}
 
-	if topic == "" {
-		return nil, ConfigurationError("Empty topic")
-	}
+// Consumer manages PartitionConsumers which process Kafka messages from brokers. You MUST call Close()
+// on a consumer to avoid leaks, it will not be garbage-collected automatically when it passes out of
+// scope.
+type Consumer interface {
+	// ConsumePartition creates a PartitionConsumer on the given topic/partition with the given offset. It will
+	// return an error if this Consumer is already consuming on the given topic/partition. Offset can be a
+	// literal offset, or OffsetNewest or OffsetOldest
+	ConsumePartition(topic string, partition int32, offset int64) (PartitionConsumer, error)
 
-	broker, err := client.Leader(topic, partition)
+	// Close shuts down the consumer. It must be called after all child PartitionConsumers have already been closed.
+	Close() error
+}
+
+type consumer struct {
+	client    Client
+	conf      *Config
+	ownClient bool
+
+	lock            sync.Mutex
+	children        map[string]map[int32]*partitionConsumer
+	brokerConsumers map[*Broker]*brokerConsumer
+}
+
+// NewConsumer creates a new consumer using the given broker addresses and configuration.
+func NewConsumer(addrs []string, config *Config) (Consumer, error) {
+	client, err := NewClient(addrs, config)
 	if err != nil {
 		return nil, err
 	}
 
-	c := &Consumer{
-		client:    client,
-		topic:     topic,
-		partition: partition,
-		group:     group,
-		config:    *config,
-		broker:    broker,
-		stopper:   make(chan bool),
-		done:      make(chan bool),
-		events:    make(chan *ConsumerEvent, config.EventBufferSize),
+	c, err := NewConsumerFromClient(client)
+	if err != nil {
+		return nil, err
+	}
+	c.(*consumer).ownClient = true
+	return c, nil
+}
+
+// NewConsumerFromClient creates a new consumer using the given client. It is still
+// necessary to call Close() on the underlying client when shutting down this consumer.
+func NewConsumerFromClient(client Client) (Consumer, error) {
+	// Check that we are not dealing with a closed Client before processing any other arguments
+	if client.Closed() {
+		return nil, ErrClosedClient
 	}
 
-	switch config.OffsetMethod {
-	case OffsetMethodManual:
-		if config.OffsetValue < 0 {
-			return nil, ConfigurationError("OffsetValue cannot be < 0 when OffsetMethod is MANUAL")
-		}
-		c.offset = config.OffsetValue
-	case OffsetMethodNewest:
-		c.offset, err = c.getOffset(LatestOffsets, true)
-		if err != nil {
-			return nil, err
-		}
-	case OffsetMethodOldest:
-		c.offset, err = c.getOffset(EarliestOffset, true)
-		if err != nil {
-			return nil, err
-		}
-	default:
-		return nil, ConfigurationError("Invalid OffsetMethod")
+	c := &consumer{
+		client:          client,
+		conf:            client.Config(),
+		children:        make(map[string]map[int32]*partitionConsumer),
+		brokerConsumers: make(map[*Broker]*brokerConsumer),
 	}
-
-	go withRecover(c.fetchMessages)
 
 	return c, nil
 }
 
-// Events returns the read channel for any events (messages or errors) that might be returned by the broker.
-func (c *Consumer) Events() <-chan *ConsumerEvent {
-	return c.events
-}
-
-// Close stops the consumer from fetching messages. It is required to call this function before
-// a consumer object passes out of scope, as it will otherwise leak memory. You must call this before
-// calling Close on the underlying client.
-func (c *Consumer) Close() error {
-	close(c.stopper)
-	<-c.done
+func (c *consumer) Close() error {
+	if c.ownClient {
+		return c.client.Close()
+	}
 	return nil
 }
 
-// helper function for safely sending an error on the errors channel
-// if it returns true, the error was sent (or was nil)
-// if it returns false, the stopper channel signaled that your goroutine should return!
-func (c *Consumer) sendError(err error) bool {
-	if err == nil {
-		return true
+func (c *consumer) ConsumePartition(topic string, partition int32, offset int64) (PartitionConsumer, error) {
+	child := &partitionConsumer{
+		consumer:  c,
+		conf:      c.conf,
+		topic:     topic,
+		partition: partition,
+		messages:  make(chan *ConsumerMessage, c.conf.ChannelBufferSize),
+		errors:    make(chan *ConsumerError, c.conf.ChannelBufferSize),
+		trigger:   make(chan none, 1),
+		dying:     make(chan none),
+		fetchSize: c.conf.Consumer.Fetch.Default,
 	}
 
-	select {
-	case <-c.stopper:
-		close(c.events)
-		close(c.done)
-		return false
-	case c.events <- &ConsumerEvent{Err: err, Topic: c.topic, Partition: c.partition}:
-		return true
+	if err := child.chooseStartingOffset(offset); err != nil {
+		return nil, err
+	}
+
+	if leader, err := c.client.Leader(child.topic, child.partition); err != nil {
+		return nil, err
+	} else {
+		child.broker = leader
+	}
+
+	if err := c.addChild(child); err != nil {
+		return nil, err
+	}
+
+	go withRecover(child.dispatcher)
+
+	brokerWorker := c.refBrokerConsumer(child.broker)
+	brokerWorker.input <- child
+
+	return child, nil
+}
+
+func (c *consumer) addChild(child *partitionConsumer) error {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	topicChildren := c.children[child.topic]
+	if topicChildren == nil {
+		topicChildren = make(map[int32]*partitionConsumer)
+		c.children[child.topic] = topicChildren
+	}
+
+	if topicChildren[child.partition] != nil {
+		return ConfigurationError("That topic/partition is already being consumed")
+	}
+
+	topicChildren[child.partition] = child
+	return nil
+}
+
+func (c *consumer) removeChild(child *partitionConsumer) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	delete(c.children[child.topic], child.partition)
+}
+
+func (c *consumer) refBrokerConsumer(broker *Broker) *brokerConsumer {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	brokerWorker := c.brokerConsumers[broker]
+	if brokerWorker == nil {
+		brokerWorker = &brokerConsumer{
+			consumer:         c,
+			broker:           broker,
+			input:            make(chan *partitionConsumer),
+			newSubscriptions: make(chan []*partitionConsumer),
+			wait:             make(chan none),
+			subscriptions:    make(map[*partitionConsumer]none),
+			refs:             1,
+		}
+		go withRecover(brokerWorker.subscriptionManager)
+		go withRecover(brokerWorker.subscriptionConsumer)
+		c.brokerConsumers[broker] = brokerWorker
+	} else {
+		brokerWorker.refs++
+	}
+
+	return brokerWorker
+}
+
+func (c *consumer) unrefBrokerConsumer(broker *Broker) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	brokerWorker := c.brokerConsumers[broker]
+	brokerWorker.refs--
+
+	if brokerWorker.refs == 0 {
+		close(brokerWorker.input)
+		delete(c.brokerConsumers, broker)
 	}
 }
 
-func (c *Consumer) fetchMessages() {
+// PartitionConsumer
 
-	fetchSize := c.config.DefaultFetchSize
+// PartitionConsumer processes Kafka messages from a given topic and partition. You MUST call Close()
+// or AsyncClose() on a PartitionConsumer to avoid leaks, it will not be garbage-collected automatically
+// when it passes out of scope.
+//
+// The simplest way of using a PartitionConsumer is to loop over its Messages channel using a for/range
+// loop. The PartitionConsumer will under no circumstances stop by itself once it is started, it will
+// just keep retrying if it encounters errors. By default, it logs these errors to sarama.Logger;
+// if you want to handle errors yourself, set your config's Consumer.Return.Errors to true, and read
+// from the Errors channel as well, using a select statement or in a separate goroutine. Check out
+// the examples of Consumer to see examples of these different approaches.
+type PartitionConsumer interface {
 
+	// AsyncClose initiates a shutdown of the PartitionConsumer. This method will return immediately,
+	// after which you should wait until the 'messages' and 'errors' channel are drained.
+	// It is required to call this function, or Close before a consumer object passes out of scope,
+	// as it will otherwise leak memory.  You must call this before calling Close on the underlying
+	// client.
+	AsyncClose()
+
+	// Close stops the PartitionConsumer from fetching messages. It is required to call this function
+	// (or AsyncClose) before a consumer object passes out of scope, as it will otherwise leak memory. You must
+	// call this before calling Close on the underlying client.
+	Close() error
+
+	// Messages returns the read channel for the messages that are returned by the broker.
+	Messages() <-chan *ConsumerMessage
+
+	// Errors returns a read channel of errors that occured during consuming, if enabled. By default,
+	// errors are logged and not returned over this channel. If you want to implement any custom errpr
+	// handling, set your config's Consumer.Return.Errors setting to true, and read from this channel.
+	Errors() <-chan *ConsumerError
+}
+
+type partitionConsumer struct {
+	consumer  *consumer
+	conf      *Config
+	topic     string
+	partition int32
+
+	broker         *Broker
+	messages       chan *ConsumerMessage
+	errors         chan *ConsumerError
+	trigger, dying chan none
+
+	fetchSize int32
+	offset    int64
+}
+
+func (child *partitionConsumer) sendError(err error) {
+	cErr := &ConsumerError{
+		Topic:     child.topic,
+		Partition: child.partition,
+		Err:       err,
+	}
+
+	if child.conf.Consumer.Return.Errors {
+		child.errors <- cErr
+	} else {
+		Logger.Println(cErr)
+	}
+}
+
+func (child *partitionConsumer) dispatcher() {
+	for _ = range child.trigger {
+		select {
+		case <-child.dying:
+			close(child.trigger)
+		case <-time.After(child.conf.Consumer.Retry.Backoff):
+			if child.broker != nil {
+				child.consumer.unrefBrokerConsumer(child.broker)
+				child.broker = nil
+			}
+
+			if err := child.dispatch(); err != nil {
+				child.sendError(err)
+				child.trigger <- none{}
+			}
+		}
+	}
+
+	if child.broker != nil {
+		child.consumer.unrefBrokerConsumer(child.broker)
+	}
+	child.consumer.removeChild(child)
+	close(child.messages)
+	close(child.errors)
+}
+
+func (child *partitionConsumer) dispatch() error {
+	if err := child.consumer.client.RefreshMetadata(child.topic); err != nil {
+		return err
+	}
+
+	if leader, err := child.consumer.client.Leader(child.topic, child.partition); err != nil {
+		return err
+	} else {
+		child.broker = leader
+	}
+
+	brokerWorker := child.consumer.refBrokerConsumer(child.broker)
+
+	brokerWorker.input <- child
+
+	return nil
+}
+
+func (child *partitionConsumer) chooseStartingOffset(offset int64) (err error) {
+	var time int64
+
+	switch offset {
+	case OffsetNewest, OffsetOldest:
+		time = offset
+	default:
+		if offset < 0 {
+			return ConfigurationError("Invalid offset")
+		}
+		child.offset = offset
+		return nil
+	}
+
+	child.offset, err = child.consumer.client.GetOffset(child.topic, child.partition, time)
+	return err
+}
+
+func (child *partitionConsumer) Messages() <-chan *ConsumerMessage {
+	return child.messages
+}
+
+func (child *partitionConsumer) Errors() <-chan *ConsumerError {
+	return child.errors
+}
+
+func (child *partitionConsumer) AsyncClose() {
+	// this triggers whatever worker owns this child to abandon it and close its trigger channel, which causes
+	// the dispatcher to exit its loop, which removes it from the consumer then closes its 'messages' and
+	// 'errors' channel (alternatively, if the child is already at the dispatcher for some reason, that will
+	// also just close itself)
+	close(child.dying)
+}
+
+func (child *partitionConsumer) Close() error {
+	child.AsyncClose()
+
+	go withRecover(func() {
+		for _ = range child.messages {
+			// drain
+		}
+	})
+
+	var errors ConsumerErrors
+	for err := range child.errors {
+		errors = append(errors, err)
+	}
+
+	if len(errors) > 0 {
+		return errors
+	}
+	return nil
+}
+
+// brokerConsumer
+
+type brokerConsumer struct {
+	consumer         *consumer
+	broker           *Broker
+	input            chan *partitionConsumer
+	newSubscriptions chan []*partitionConsumer
+	wait             chan none
+	subscriptions    map[*partitionConsumer]none
+	refs             int
+}
+
+func (w *brokerConsumer) subscriptionManager() {
+	var buffer []*partitionConsumer
+
+	// The subscriptionManager constantly accepts new subscriptions on `input` (even when the main subscriptionConsumer
+	//  goroutine is in the middle of a network request) and batches it up. The main worker goroutine picks
+	// up a batch of new subscriptions between every network request by reading from `newSubscriptions`, so we give
+	// it nil if no new subscriptions are available. We also write to `wait` only when new subscriptions is available,
+	// so the main goroutine can block waiting for work if it has none.
 	for {
-		request := new(FetchRequest)
-		request.MinBytes = c.config.MinFetchSize
-		request.MaxWaitTime = int32(c.config.MaxWaitTime / time.Millisecond)
-		request.AddBlock(c.topic, c.partition, c.offset, fetchSize)
-
-		response, err := c.broker.Fetch(c.client.id, request)
-		switch {
-		case err == nil:
-			break
-		case err == EncodingError:
-			if c.sendError(err) {
-				continue
-			} else {
-				return
-			}
-		default:
-			Logger.Printf("Unexpected error processing FetchRequest; disconnecting broker %s: %s\n", c.broker.addr, err)
-			c.client.disconnectBroker(c.broker)
-			for c.broker, err = c.client.Leader(c.topic, c.partition); err != nil; c.broker, err = c.client.Leader(c.topic, c.partition) {
-				if !c.sendError(err) {
-					return
+		if len(buffer) > 0 {
+			select {
+			case event, ok := <-w.input:
+				if !ok {
+					goto done
 				}
+				buffer = append(buffer, event)
+			case w.newSubscriptions <- buffer:
+				buffer = nil
+			case w.wait <- none{}:
 			}
+		} else {
+			select {
+			case event, ok := <-w.input:
+				if !ok {
+					goto done
+				}
+				buffer = append(buffer, event)
+			case w.newSubscriptions <- nil:
+			}
+		}
+	}
+
+done:
+	close(w.wait)
+	if len(buffer) > 0 {
+		w.newSubscriptions <- buffer
+	}
+	close(w.newSubscriptions)
+}
+
+func (w *brokerConsumer) subscriptionConsumer() {
+	<-w.wait // wait for our first piece of work
+
+	// the subscriptionConsumer ensures we will get nil right away if no new subscriptions is available
+	for newSubscriptions := range w.newSubscriptions {
+		w.updateSubscriptionCache(newSubscriptions)
+
+		if len(w.subscriptions) == 0 {
+			// We're about to be shut down or we're about to receive more subscriptions.
+			// Either way, the signal just hasn't propagated to our goroutine yet.
+			<-w.wait
 			continue
 		}
 
-		block := response.GetBlock(c.topic, c.partition)
-		if block == nil {
-			if c.sendError(IncompleteResponse) {
-				continue
-			} else {
-				return
-			}
+		response, err := w.fetchNewMessages()
+
+		if err != nil {
+			Logger.Printf("Unexpected error processing FetchRequest; disconnecting from broker %s: %s\n", w.broker.addr, err)
+			w.abort(err)
+			return
 		}
 
-		switch block.Err {
-		case NoError:
-			break
-		case UnknownTopicOrPartition, NotLeaderForPartition, LeaderNotAvailable:
-			err = c.client.RefreshTopicMetadata(c.topic)
-			if c.sendError(err) {
-				for c.broker, err = c.client.Leader(c.topic, c.partition); err != nil; c.broker, err = c.client.Leader(c.topic, c.partition) {
-					if !c.sendError(err) {
-						return
-					}
-				}
+		for child := range w.subscriptions {
+			block := response.GetBlock(child.topic, child.partition)
+			if block == nil {
+				child.sendError(ErrIncompleteResponse)
+				child.trigger <- none{}
+				delete(w.subscriptions, child)
 				continue
-			} else {
-				return
 			}
+
+			w.handleResponse(child, block)
+		}
+	}
+}
+
+func (w *brokerConsumer) updateSubscriptionCache(newSubscriptions []*partitionConsumer) {
+	// take new subscriptions, and abandon subscriptions that have been closed
+	for _, child := range newSubscriptions {
+		w.subscriptions[child] = none{}
+	}
+
+	for child := range w.subscriptions {
+		select {
+		case <-child.dying:
+			close(child.trigger)
+			delete(w.subscriptions, child)
 		default:
-			if c.sendError(block.Err) {
-				continue
-			} else {
-				return
-			}
-		}
-
-		if len(block.MsgSet.Messages) == 0 {
-			// We got no messages. If we got a trailing one then we need to ask for more data.
-			// Otherwise we just poll again and wait for one to be produced...
-			if block.MsgSet.PartialTrailingMessage {
-				if c.config.MaxMessageSize == 0 {
-					fetchSize *= 2
-				} else {
-					if fetchSize == c.config.MaxMessageSize {
-						if c.sendError(MessageTooLarge) {
-							continue
-						} else {
-							return
-						}
-					} else {
-						fetchSize *= 2
-						if fetchSize > c.config.MaxMessageSize {
-							fetchSize = c.config.MaxMessageSize
-						}
-					}
-				}
-			}
-			select {
-			case <-c.stopper:
-				close(c.events)
-				close(c.done)
-				return
-			default:
-				continue
-			}
-		} else {
-			fetchSize = c.config.DefaultFetchSize
-		}
-
-		atLeastOne := false
-		for _, msgBlock := range block.MsgSet.Messages {
-			prelude := true
-
-			for _, msg := range msgBlock.Messages() {
-				if prelude && msg.Offset < c.offset {
-					continue
-				}
-				prelude = false
-
-				event := &ConsumerEvent{Topic: c.topic, Partition: c.partition}
-				if msg.Offset == c.offset {
-					atLeastOne = true
-					event.Key = msg.Msg.Key
-					event.Value = msg.Msg.Value
-					event.Offset = msg.Offset
-					c.offset++
-				} else {
-					event.Err = IncompleteResponse
-				}
-
-				select {
-				case <-c.stopper:
-					close(c.events)
-					close(c.done)
-					return
-				case c.events <- event:
-				}
-			}
-
-		}
-
-		if !atLeastOne {
-			select {
-			case <-c.stopper:
-				close(c.events)
-				close(c.done)
-				return
-			case c.events <- &ConsumerEvent{Topic: c.topic, Partition: c.partition, Err: IncompleteResponse}:
-			}
 		}
 	}
 }
 
-func (c *Consumer) getOffset(where OffsetTime, retry bool) (int64, error) {
-	offset, err := c.client.GetOffset(c.topic, c.partition, where)
+func (w *brokerConsumer) abort(err error) {
+	_ = w.broker.Close() // we don't care about the error this might return, we already have one
 
-	switch err {
-	case nil:
+	for child := range w.subscriptions {
+		child.sendError(err)
+		child.trigger <- none{}
+	}
+
+	for newSubscription := range w.newSubscriptions {
+		for _, child := range newSubscription {
+			child.sendError(err)
+			child.trigger <- none{}
+		}
+	}
+}
+
+func (w *brokerConsumer) fetchNewMessages() (*FetchResponse, error) {
+	request := &FetchRequest{
+		MinBytes:    w.consumer.conf.Consumer.Fetch.Min,
+		MaxWaitTime: int32(w.consumer.conf.Consumer.MaxWaitTime / time.Millisecond),
+	}
+
+	for child := range w.subscriptions {
+		request.AddBlock(child.topic, child.partition, child.offset, child.fetchSize)
+	}
+
+	return w.broker.Fetch(request)
+}
+
+func (w *brokerConsumer) handleResponse(child *partitionConsumer, block *FetchResponseBlock) {
+	switch block.Err {
+	case ErrNoError:
 		break
-	case EncodingError:
-		return -1, err
 	default:
-		if !retry {
-			return -1, err
-		}
+		child.sendError(block.Err)
+		fallthrough
+	case ErrUnknownTopicOrPartition, ErrNotLeaderForPartition, ErrLeaderNotAvailable:
+		// doesn't belong to us, redispatch it
+		child.trigger <- none{}
+		delete(w.subscriptions, child)
+		return
+	}
 
-		switch err.(type) {
-		case KError:
-			switch err {
-			case UnknownTopicOrPartition, NotLeaderForPartition, LeaderNotAvailable:
-				err = c.client.RefreshTopicMetadata(c.topic)
-				if err != nil {
-					return -1, err
+	if len(block.MsgSet.Messages) == 0 {
+		// We got no messages. If we got a trailing one then we need to ask for more data.
+		// Otherwise we just poll again and wait for one to be produced...
+		if block.MsgSet.PartialTrailingMessage {
+			if child.conf.Consumer.Fetch.Max > 0 && child.fetchSize == child.conf.Consumer.Fetch.Max {
+				// we can't ask for more data, we've hit the configured limit
+				child.sendError(ErrMessageTooLarge)
+				child.offset++ // skip this one so we can keep processing future messages
+			} else {
+				child.fetchSize *= 2
+				if child.conf.Consumer.Fetch.Max > 0 && child.fetchSize > child.conf.Consumer.Fetch.Max {
+					child.fetchSize = child.conf.Consumer.Fetch.Max
 				}
-			default:
-				Logger.Printf("Unexpected error processing OffsetRequest; disconnecting broker %s: %s\n", c.broker.addr, err)
-				c.client.disconnectBroker(c.broker)
-
-				broker, brokerErr := c.client.Leader(c.topic, c.partition)
-				if brokerErr != nil {
-					return -1, brokerErr
-				}
-				c.broker = broker
 			}
-			return c.getOffset(where, false)
 		}
-		return -1, err
-	}
-	return offset, nil
-}
 
-// NewConsumerConfig creates a ConsumerConfig instance with sane defaults.
-func NewConsumerConfig() *ConsumerConfig {
-	return &ConsumerConfig{
-		DefaultFetchSize: 32768,
-		MinFetchSize:     1,
-		MaxWaitTime:      250 * time.Millisecond,
-		EventBufferSize:  16,
-	}
-}
-
-// Validate checks a ConsumerConfig instance. It will return a
-// ConfigurationError if the specified value doesn't make sense.
-func (config *ConsumerConfig) Validate() error {
-	if config.DefaultFetchSize <= 0 {
-		return ConfigurationError("Invalid DefaultFetchSize")
+		return
 	}
 
-	if config.MinFetchSize <= 0 {
-		return ConfigurationError("Invalid MinFetchSize")
+	// we got messages, reset our fetch size in case it was increased for a previous request
+	child.fetchSize = child.conf.Consumer.Fetch.Default
+
+	incomplete := false
+	atLeastOne := false
+	prelude := true
+	for _, msgBlock := range block.MsgSet.Messages {
+
+		for _, msg := range msgBlock.Messages() {
+			if prelude && msg.Offset < child.offset {
+				continue
+			}
+			prelude = false
+
+			if msg.Offset >= child.offset {
+				atLeastOne = true
+				child.messages <- &ConsumerMessage{
+					Topic:     child.topic,
+					Partition: child.partition,
+					Key:       msg.Msg.Key,
+					Value:     msg.Msg.Value,
+					Offset:    msg.Offset,
+				}
+				child.offset = msg.Offset + 1
+			} else {
+				incomplete = true
+			}
+		}
+
 	}
 
-	if config.MaxMessageSize < 0 {
-		return ConfigurationError("Invalid MaxMessageSize")
+	if incomplete || !atLeastOne {
+		child.sendError(ErrIncompleteResponse)
+		child.trigger <- none{}
+		delete(w.subscriptions, child)
 	}
-
-	if config.MaxWaitTime < 1*time.Millisecond {
-		return ConfigurationError("Invalid MaxWaitTime, it needs to be at least 1ms")
-	} else if config.MaxWaitTime < 100*time.Millisecond {
-		Logger.Println("ConsumerConfig.MaxWaitTime is very low, which can cause high CPU and network usage. See documentation for details.")
-	} else if config.MaxWaitTime%time.Millisecond != 0 {
-		Logger.Println("ConsumerConfig.MaxWaitTime only supports millisecond precision; nanoseconds will be truncated.")
-	}
-
-	if config.EventBufferSize < 0 {
-		return ConfigurationError("Invalid EventBufferSize")
-	}
-
-	return nil
 }

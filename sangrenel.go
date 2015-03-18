@@ -47,7 +47,7 @@ var (
 	noop          bool
 
 	// Character selection from which random messages are generated.
-	chars = []byte("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890!@#$%^&*(){}][:<>.")
+	chars = []byte("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890!@#$^&*(){}][:<>.")
 
 	// Counters / misc.
 	sig_chan        = make(chan os.Signal)
@@ -77,7 +77,7 @@ func init() {
 // Workers track and limit message rates using incrSent() and fetchSent().
 // 5 instances of clientWorker are created under each Kafka client.
 func clientWorker(c kafka.Client) {
-	producer, err := kafka.NewSimpleProducer(&c, nil)
+	producer, err := kafka.NewSyncProducerFromClient(c)
 	if err != nil {
 		fmt.Println(err.Error())
 	}
@@ -88,7 +88,7 @@ func clientWorker(c kafka.Client) {
 	generator := rand.New(source)
 
 	// Create msg object once, reuse.
-	msg := make([]byte, msgSize)
+	msgData := make([]byte, msgSize)
 
 	// Use a local accumulator then periodically update global counter.
 	// Global counter can become a bottleneck with too many threads.
@@ -104,11 +104,12 @@ func clientWorker(c kafka.Client) {
 		countStart := fetchSent()
 		var start time.Time
 		for fetchSent()-countStart < msgRate {
-			randMsg(msg, *generator)
+			randMsg(msgData, *generator)
+			msg := &kafka.ProducerMessage{Topic: topic, Value: kafka.ByteEncoder(msgData)}
 			// We start timing after the message is created.
 			// This ensures latency metering from the time between message sent and receiving an ack.
 			start = time.Now()
-			err = producer.SendMessage(topic, nil, kafka.ByteEncoder(msg))
+			_, _, err = producer.SendMessage(msg)
 			if err != nil {
 				fmt.Println(err)
 			} else {
@@ -165,14 +166,14 @@ func kafkaClient(n int) {
 	// If not noop, actually fire up Kafka connections and send messages.
 	case false:
 		cId := "client_" + strconv.Itoa(n)
-		client, err := kafka.NewClient(cId, brokers, kafka.NewClientConfig())
+		client, err := kafka.NewClient(brokers, kafka.NewConfig())
 		if err != nil {
 			panic(err)
 		} else {
 			fmt.Printf("%s connected\n", cId)
 		}
 		for i := 0; i < 5; i++ {
-			go clientWorker(*client)
+			go clientWorker(client)
 		}
 	// If noop, we're not creating connections at all.
 	// Just generate messages and burn CPU.

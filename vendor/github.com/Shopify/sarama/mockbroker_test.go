@@ -6,17 +6,11 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"testing"
+	"time"
 )
 
-// TestState is a generic interface for a test state, implemented e.g. by testing.T
-type TestState interface {
-	Error(args ...interface{})
-	Fatal(args ...interface{})
-	Errorf(format string, args ...interface{})
-	Fatalf(format string, args ...interface{})
-}
-
-// MockBroker is a mock Kafka broker. It consists of a TCP server on a kernel-selected localhost port that
+// mockBroker is a mock Kafka broker. It consists of a TCP server on a kernel-selected localhost port that
 // accepts a single connection. It reads Kafka requests from that connection and returns each response
 // from the channel provided at creation-time (if a response has a len of 0, nothing is sent, if a response
 // the server sleeps for 250ms instead of reading a request).
@@ -26,28 +20,33 @@ type TestState interface {
 //
 // It is not necessary to prefix message length or correlation ID to your response bytes, the server does that
 // automatically as a convenience.
-type MockBroker struct {
+type mockBroker struct {
 	brokerID     int32
 	port         int32
 	stopper      chan bool
 	expectations chan encoder
 	listener     net.Listener
-	t            TestState
+	t            *testing.T
+	latency      time.Duration
 }
 
-func (b *MockBroker) BrokerID() int32 {
+func (b *mockBroker) SetLatency(latency time.Duration) {
+	b.latency = latency
+}
+
+func (b *mockBroker) BrokerID() int32 {
 	return b.brokerID
 }
 
-func (b *MockBroker) Port() int32 {
+func (b *mockBroker) Port() int32 {
 	return b.port
 }
 
-func (b *MockBroker) Addr() string {
+func (b *mockBroker) Addr() string {
 	return b.listener.Addr().String()
 }
 
-func (b *MockBroker) Close() {
+func (b *mockBroker) Close() {
 	if len(b.expectations) > 0 {
 		b.t.Errorf("Not all expectations were satisfied in mockBroker with ID=%d! Still waiting on %d", b.BrokerID(), len(b.expectations))
 	}
@@ -55,7 +54,7 @@ func (b *MockBroker) Close() {
 	<-b.stopper
 }
 
-func (b *MockBroker) serverLoop() (ok bool) {
+func (b *mockBroker) serverLoop() (ok bool) {
 	var (
 		err  error
 		conn net.Conn
@@ -78,6 +77,10 @@ func (b *MockBroker) serverLoop() (ok bool) {
 		}
 		if _, err = io.ReadFull(conn, body); err != nil {
 			return b.serverError(err, conn)
+		}
+
+		if b.latency > 0 {
+			time.Sleep(b.latency)
 		}
 
 		response, err := encode(expectation)
@@ -107,7 +110,7 @@ func (b *MockBroker) serverLoop() (ok bool) {
 	return true
 }
 
-func (b *MockBroker) serverError(err error, conn net.Conn) bool {
+func (b *mockBroker) serverError(err error, conn net.Conn) bool {
 	b.t.Error(err)
 	if conn != nil {
 		if err := conn.Close(); err != nil {
@@ -120,20 +123,26 @@ func (b *MockBroker) serverError(err error, conn net.Conn) bool {
 	return false
 }
 
-// NewMockBroker launches a fake Kafka broker. It takes a TestState (e.g. *testing.T) as provided by the
+// newMockBroker launches a fake Kafka broker. It takes a *testing.T as provided by the
 // test framework and a channel of responses to use.  If an error occurs it is
-// simply logged to the TestState and the broker exits.
-func NewMockBroker(t TestState, brokerID int32) *MockBroker {
+// simply logged to the *testing.T and the broker exits.
+func newMockBroker(t *testing.T, brokerID int32) *mockBroker {
+	return newMockBrokerAddr(t, brokerID, "localhost:0")
+}
+
+// newMockBrokerAddr behaves like newMockBroker but listens on the address you give
+// it rather than just some ephemeral port.
+func newMockBrokerAddr(t *testing.T, brokerID int32, addr string) *mockBroker {
 	var err error
 
-	broker := &MockBroker{
+	broker := &mockBroker{
 		stopper:      make(chan bool),
 		t:            t,
 		brokerID:     brokerID,
 		expectations: make(chan encoder, 512),
 	}
 
-	broker.listener, err = net.Listen("tcp", "localhost:0")
+	broker.listener, err = net.Listen("tcp", addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,6 +161,6 @@ func NewMockBroker(t TestState, brokerID int32) *MockBroker {
 	return broker
 }
 
-func (b *MockBroker) Returns(e encoder) {
+func (b *mockBroker) Returns(e encoder) {
 	b.expectations <- e
 }

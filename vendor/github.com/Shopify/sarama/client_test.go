@@ -12,67 +12,94 @@ func safeClose(t *testing.T, c io.Closer) {
 	}
 }
 
-func TestDefaultClientConfigValidates(t *testing.T) {
-	config := NewClientConfig()
-	if err := config.Validate(); err != nil {
-		t.Error(err)
-	}
-}
-
 func TestSimpleClient(t *testing.T) {
+	seedBroker := newMockBroker(t, 1)
 
-	mb := NewMockBroker(t, 1)
+	seedBroker.Returns(new(MetadataResponse))
 
-	mb.Returns(new(MetadataResponse))
-
-	client, err := NewClient("client_id", []string{mb.Addr()}, nil)
+	client, err := NewClient([]string{seedBroker.Addr()}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer safeClose(t, client)
-	defer mb.Close()
+
+	seedBroker.Close()
+	safeClose(t, client)
 }
 
-func TestClientSeedBrokers(t *testing.T) {
+func TestCachedPartitions(t *testing.T) {
+	seedBroker := newMockBroker(t, 1)
 
-	mb1 := NewMockBroker(t, 1)
-	mb2 := NewMockBroker(t, 2)
-
-	mdr := new(MetadataResponse)
-	mdr.AddBroker(mb2.Addr(), mb2.BrokerID())
-	mb1.Returns(mdr)
-
-	client, err := NewClient("client_id", []string{mb1.Addr()}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer safeClose(t, client)
-	defer mb1.Close()
-	defer mb2.Close()
-}
-
-func TestClientMetadata(t *testing.T) {
-
-	mb1 := NewMockBroker(t, 1)
-	mb5 := NewMockBroker(t, 5)
 	replicas := []int32{3, 1, 5}
 	isr := []int32{5, 1}
 
-	mdr := new(MetadataResponse)
-	mdr.AddBroker(mb5.Addr(), mb5.BrokerID())
-	mdr.AddTopicPartition("my_topic", 0, mb5.BrokerID(), replicas, isr, NoError)
-	mdr.AddTopicPartition("my_topic", 1, mb5.BrokerID(), replicas, isr, LeaderNotAvailable)
-	mb1.Returns(mdr)
+	metadataResponse := new(MetadataResponse)
+	metadataResponse.AddBroker("localhost:12345", 2)
+	metadataResponse.AddTopicPartition("my_topic", 0, 2, replicas, isr, ErrNoError)
+	metadataResponse.AddTopicPartition("my_topic", 1, 2, replicas, isr, ErrLeaderNotAvailable)
+	seedBroker.Returns(metadataResponse)
 
-	config := NewClientConfig()
-	config.MetadataRetries = 0
-	client, err := NewClient("client_id", []string{mb1.Addr()}, config)
+	config := NewConfig()
+	config.Metadata.Retry.Max = 0
+	c, err := NewClient([]string{seedBroker.Addr()}, config)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer safeClose(t, client)
-	defer mb1.Close()
-	defer mb5.Close()
+	client := c.(*client)
+
+	// Verify they aren't cached the same
+	allP := client.cachedPartitionsResults["my_topic"][allPartitions]
+	writeP := client.cachedPartitionsResults["my_topic"][writablePartitions]
+	if len(allP) == len(writeP) {
+		t.Fatal("Invalid lengths!")
+	}
+
+	tmp := client.cachedPartitionsResults["my_topic"]
+	// Verify we actually use the cache at all!
+	tmp[allPartitions] = []int32{1, 2, 3, 4}
+	client.cachedPartitionsResults["my_topic"] = tmp
+	if 4 != len(client.cachedPartitions("my_topic", allPartitions)) {
+		t.Fatal("Not using the cache!")
+	}
+
+	seedBroker.Close()
+	safeClose(t, client)
+}
+
+func TestClientSeedBrokers(t *testing.T) {
+	seedBroker := newMockBroker(t, 1)
+
+	metadataResponse := new(MetadataResponse)
+	metadataResponse.AddBroker("localhost:12345", 2)
+	seedBroker.Returns(metadataResponse)
+
+	client, err := NewClient([]string{seedBroker.Addr()}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	seedBroker.Close()
+	safeClose(t, client)
+}
+
+func TestClientMetadata(t *testing.T) {
+	seedBroker := newMockBroker(t, 1)
+	leader := newMockBroker(t, 5)
+
+	replicas := []int32{3, 1, 5}
+	isr := []int32{5, 1}
+
+	metadataResponse := new(MetadataResponse)
+	metadataResponse.AddBroker(leader.Addr(), leader.BrokerID())
+	metadataResponse.AddTopicPartition("my_topic", 0, leader.BrokerID(), replicas, isr, ErrNoError)
+	metadataResponse.AddTopicPartition("my_topic", 1, leader.BrokerID(), replicas, isr, ErrLeaderNotAvailable)
+	seedBroker.Returns(metadataResponse)
+
+	config := NewConfig()
+	config.Metadata.Retry.Max = 0
+	client, err := NewClient([]string{seedBroker.Addr()}, config)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	topics, err := client.Topics()
 	if err != nil {
@@ -113,32 +140,28 @@ func TestClientMetadata(t *testing.T) {
 		t.Error("Incorrect (or unsorted) replica")
 	}
 
-	isr, err = client.ReplicasInSync("my_topic", 0)
-	if err != nil {
-		t.Error(err)
-	} else if isr[0] != 1 {
-		t.Error("Incorrect (or unsorted) isr")
-	} else if isr[1] != 5 {
-		t.Error("Incorrect (or unsorted) isr")
-	}
+	leader.Close()
+	seedBroker.Close()
+	safeClose(t, client)
 }
 
 func TestClientRefreshBehaviour(t *testing.T) {
-	mb1 := NewMockBroker(t, 1)
-	mb5 := NewMockBroker(t, 5)
+	seedBroker := newMockBroker(t, 1)
+	leader := newMockBroker(t, 5)
 
-	mdr := new(MetadataResponse)
-	mdr.AddBroker(mb5.Addr(), mb5.BrokerID())
-	mb1.Returns(mdr)
+	metadataResponse1 := new(MetadataResponse)
+	metadataResponse1.AddBroker(leader.Addr(), leader.BrokerID())
+	seedBroker.Returns(metadataResponse1)
 
-	mdr2 := new(MetadataResponse)
-	mdr2.AddTopicPartition("my_topic", 0xb, mb5.BrokerID(), nil, nil, NoError)
-	mb1.Returns(mdr2)
+	metadataResponse2 := new(MetadataResponse)
+	metadataResponse2.AddTopicPartition("my_topic", 0xb, leader.BrokerID(), nil, nil, ErrNoError)
+	seedBroker.Returns(metadataResponse2)
 
-	client, err := NewClient("clientID", []string{mb1.Addr()}, nil)
+	c, err := NewClient([]string{seedBroker.Addr()}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	client := c.(*client)
 
 	parts, err := client.Partitions("my_topic")
 	if err != nil {
@@ -154,8 +177,7 @@ func TestClientRefreshBehaviour(t *testing.T) {
 		t.Error("Leader for my_topic had incorrect ID.")
 	}
 
-	client.disconnectBroker(tst)
-	mb5.Close()
-	mb1.Close()
+	leader.Close()
+	seedBroker.Close()
 	safeClose(t, client)
 }
