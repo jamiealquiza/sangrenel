@@ -39,12 +39,13 @@ import (
 
 var (
 	// Configs.
-	brokers       []string
-	topic         string
-	msgSize       int
-	msgRate       int64
-	clientWorkers int
-	noop          bool
+	brokers   []string
+	topic     string
+	msgSize   int
+	msgRate   int64
+	clients   int
+	producers int
+	noop      bool
 
 	// Character selection from which random messages are generated.
 	chars = []byte("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890!@#$^&*(){}][:<>.")
@@ -63,7 +64,8 @@ func init() {
 	flag.IntVar(&msgSize, "size", 300, "Message size in bytes")
 	flag.Int64Var(&msgRate, "rate", 100000000, "Apply a global message rate limit")
 	flag.BoolVar(&noop, "noop", false, "Test message generation performance, do not transmit messages")
-	flag.IntVar(&clientWorkers, "workers", 1, "Number of Kafka client workers")
+	flag.IntVar(&clients, "clients", 1, "Number of Kafka client workers")
+	flag.IntVar(&producers, "producers", 5, "Number of producer instances per client")
 	brokerString := flag.String("brokers", "localhost:9092", "Comma delimited list of Kafka brokers")
 	flag.Parse()
 
@@ -73,10 +75,10 @@ func init() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 }
 
-// clientWorker generates random messages and writes to Kafka.
+// clientProducer generates random messages and writes to Kafka.
 // Workers track and limit message rates using incrSent() and fetchSent().
-// 5 instances of clientWorker are created under each Kafka client.
-func clientWorker(c kafka.Client) {
+// Default 5 instances of clientProducer are created under each Kafka client.
+func clientProducer(c kafka.Client) {
 	producer, err := kafka.NewSyncProducerFromClient(c)
 	if err != nil {
 		fmt.Println(err.Error())
@@ -96,7 +98,7 @@ func clientWorker(c kafka.Client) {
 	var n int64
 
 	for {
-		// Message rate limit works by having all clientWorker loops incrementing
+		// Message rate limit works by having all clientProducer loops incrementing
 		// a global counter and tracking the aggregate per-second progress.
 		// If the configured rate is met, the worker will sleep
 		// for the remainder of the 1 second window.
@@ -131,9 +133,9 @@ func clientWorker(c kafka.Client) {
 	}
 }
 
-// clientDummyWorker is a dummy function that kafkaClient calls if noop is True.
+// clientDummyProducer is a dummy function that kafkaClient calls if noop is True.
 // It is used in place of starting actual Kafka client connections to test message creation performance.
-func clientDummyWorker() {
+func clientDummyProducer() {
 	// Instantiate 'rand' per producer to avoid mutex contention.
 	source := rand.NewSource(time.Now().UnixNano())
 	generator := rand.New(source)
@@ -159,7 +161,7 @@ func clientDummyWorker() {
 }
 
 // kafkaClient initializes a connection to a Kafka cluster.
-// Each client manages 5 clientWorker() (producer instances).
+// Each client manages 5 clientProducer() (producer instances).
 // Fixed value since this seem to flatline throughput at ~5.
 func kafkaClient(n int) {
 	switch noop {
@@ -172,14 +174,14 @@ func kafkaClient(n int) {
 		} else {
 			fmt.Printf("%s connected\n", cId)
 		}
-		for i := 0; i < 5; i++ {
-			go clientWorker(client)
+		for i := 0; i < producers; i++ {
+			go clientProducer(client)
 		}
 	// If noop, we're not creating connections at all.
 	// Just generate messages and burn CPU.
 	default:
-		for i := 0; i < 5; i++ {
-			go clientDummyWorker()
+		for i := 0; i < producers; i++ {
+			go clientDummyProducer()
 		}
 	}
 	<-clientKill_chan
@@ -266,12 +268,12 @@ func main() {
 	go latencyAggregator()
 
 	// Print Sangrenel startup info.
-	fmt.Printf("\n::: Sangrenel :::\nStarting %s workers\nMessage size %s bytes\n\n",
-		strconv.Itoa(clientWorkers),
-		strconv.Itoa(msgSize))
+	fmt.Printf("\n::: Sangrenel :::\nStarting %d client workers, %d producers per worker\nMessage size %d bytes\n\n",
+		clients, producers,
+		msgSize)
 
 	// Start client workers.
-	for i := 0; i < clientWorkers; i++ {
+	for i := 0; i < clients; i++ {
 		go kafkaClient(i + 1)
 	}
 
@@ -299,7 +301,7 @@ func main() {
 		// Waits for signals. Currently just brutally kills Sangrenel.
 		case <-sig_chan:
 			fmt.Println("Killing Connections")
-			for i := 0; i < clientWorkers; i++ {
+			for i := 0; i < clients; i++ {
 				clientKill_chan <- true
 			}
 			close(clientKill_chan)

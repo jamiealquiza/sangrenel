@@ -23,40 +23,37 @@ Smashes Kafka queues with lots of messages. Usage overview:
 ./sangrenel -h
 Usage of ./sangrenel:
   -brokers="localhost:9092": Comma delimited list of Kafka brokers
+  -clients=1: Number of Kafka client workers
   -noop=false: Test message generation performance, do not transmit messages
-  -size=300: Message size in bytes
+  -producers=5: Number of producer instances per client
   -rate=100000000: Apply a global message rate limit
+  -size=300: Message size in bytes
   -topic="sangrenel": Topic to publish to
-  -workers=1: Number of Kafka client workers
 </pre>
 
-The <code>-workers</code> directive initializes n Kafka clients. Each client manages 5 Kafka producer instances in goroutines that synchronously publish random messages of <code>-size</code> bytes to the referenced Kafka cluster/topic as fast as possible. Kafka client instance (worker) counts need to be scaled up in order to produce more throughput, as each client connection maxes out throughput with roughly 5 producers instances. The <code>-rate</code> directive allows you to place a global cap on the total message rate for all workers combined.
+The <code>-clients</code> directive initializes n Kafka clients. Each client manages 5 Kafka producer instances (overridden with <code>-producers</code>) in goroutines that synchronously publish random messages of <code>-size</code> bytes to the referenced Kafka cluster/topic, as fast as possible. Kafka client worker counts need to be scaled up in order to produce more throughput, as each client connection maxes out throughput with roughly 5 producers instances. Configuring these variables allows you to roughly model arbitary topologies of connection counts and workers per connection. The <code>-rate</code> directive allows you to place a global cap on the total message rate for all workers combined.
 
-Note: Sangrenel will automatically raise <code>GOMAXPROCS</code> to the value detected by <code>runtime.NumCPU()</code> to support increasing numbers of <code>-workers</code>. Sangrenel should be tested with <code>--noop</code> (messages are only generated but not transmitted to the brokers) in order to determine the maximum message rate that the configured message size and worker setting can generate. Otherwise, you may see a throughput rate that's computationally bound versus the actual limitation of the Kafka brokers being testing.
+Note: Sangrenel will automatically raise <code>GOMAXPROCS</code> to the value detected by <code>runtime.NumCPU()</code> to support increasing numbers of <code>-clients</code>. Sangrenel should be tested with <code>--noop</code> (messages are only generated but not transmitted to the brokers) in order to determine the maximum message rate that the configured message size and worker setting can generate. Otherwise, you may see a throughput rate that's computationally bound versus the actual limitation of the Kafka brokers being testing.
 
 If a topic is referenced that does not yet exist, Sangrenel will create one with a default of 2 partitions / 1 replica (or as defined in your Kafka server configuration). Alternative parition/replica topologies should be created manually prior to running Sangrenel.
 
 Sangrenel outputs metrics based on the previous 5 seconds of operation: the aggregate amount of data being produced, message transaction rate (or generated rate if using <code>--noop</code>) and 90th percentile worst latency average (time from message sent to receiving an ack from the broker). 
 
 <pre>
-$ ./sangrenel --size=2500 --workers=8 --topic=rep --brokers=10.0.1.37:9092,10.0.1.40:9092,10.0.1.62:9092
+ % ./sangrenel -brokers="192.168.100.204:9092" -size=250 -topic=load -clients=4
 
 ::: Sangrenel :::
-Starting 8 workers
-Message size 2500 bytes
+Starting 4 client workers, 5 producers per worker
+Message size 250 bytes
 
-client_7 connected
-client_3 connected
-client_8 connected
-client_5 connected
-client_6 connected
 client_2 connected
-client_1 connected
+client_3 connected
 client_4 connected
-2014-10-02T23:53:36Z Generating 546Mb/sec @ 28627 messages/sec | topic: rep | 3.32ms 90%ile latency
-2014-10-02T23:53:41Z Generating 528Mb/sec @ 27671 messages/sec | topic: rep | 3.55ms 90%ile latency
-2014-10-02T23:53:46Z Generating 516Mb/sec @ 27040 messages/sec | topic: rep | 3.73ms 90%ile latency
-2014-10-02T23:53:51Z Generating 478Mb/sec @ 25039 messages/sec | topic: rep | 4.65ms 90%ile latency
+client_1 connected
+2015-03-18T13:08:25-06:00 Generating 29Mb/sec @ 15228 messages/sec | topic: load | 2.11ms 90%ile latency
+2015-03-18T13:08:30-06:00 Generating 29Mb/sec @ 14955 messages/sec | topic: load | 2.32ms 90%ile latency
+2015-03-18T13:08:35-06:00 Generating 30Mb/sec @ 15532 messages/sec | topic: load | 2.05ms 90%ile latency
+2015-03-18T13:08:40-06:00 Generating 30Mb/sec @ 15501 messages/sec | topic: load | 2.10ms 90%ile latency
 </pre>
 
 ### Performance
