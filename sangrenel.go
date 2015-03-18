@@ -89,13 +89,11 @@ func clientProducer(c kafka.Client) {
 	// Instantiate rand per producer to avoid mutex contention.
 	source := rand.NewSource(time.Now().UnixNano())
 	generator := rand.New(source)
-
-	// Create msg object once, reuse.
 	msgData := make([]byte, msgSize)
 
 	// Use a local accumulator then periodically update global counter.
 	// Global counter can become a bottleneck with too many threads.
-	tick := time.Tick(10 * time.Millisecond)
+	tick := time.Tick(3 * time.Millisecond)
 	var n int64
 
 	for {
@@ -137,18 +135,14 @@ func clientProducer(c kafka.Client) {
 // clientDummyProducer is a dummy function that kafkaClient calls if noop is True.
 // It is used in place of starting actual Kafka client connections to test message creation performance.
 func clientDummyProducer() {
-	// Instantiate 'rand' per producer to avoid mutex contention.
 	source := rand.NewSource(time.Now().UnixNano())
 	generator := rand.New(source)
-
-	// Define msg objet once, reuse.
 	msg := make([]byte, msgSize)
 
 	tick := time.Tick(10 * time.Millisecond)
 	var n int64
 
 	for {
-		// Generate a random message and increment the global counter.
 		randMsg(msg, *generator)
 		n++
 		select {
