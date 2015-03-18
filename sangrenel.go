@@ -230,7 +230,7 @@ func calcOutput(n int64) string {
 }
 
 // Fetches & resets current latencies set held by 'latencyAggregator()'.
-// Sorts then averages the 90th percentile worse latencies.
+// Sorts then averages the 90th percentile worst latencies.
 func calcLatency() float64 {
 	var avg float64
 	// With 'noop', we don't have latencies to operate on.
@@ -259,7 +259,7 @@ func calcLatency() float64 {
 func main() {
 	// Listens for signals.
 	signal.Notify(sig_chan, syscall.SIGINT, syscall.SIGTERM)
-	// Fires up 'latencyAggregator()' to background.
+	// Fires up 'latencyAggregator()'.
 	go latencyAggregator()
 
 	// Print Sangrenel startup info.
