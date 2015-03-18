@@ -53,10 +53,10 @@ client_6 connected
 client_2 connected
 client_1 connected
 client_4 connected
-2014-10-02T23:53:36Z Generating 546Mb/sec @ 28627 messages/sec | topic: rep | 3.32ms avg latency
-2014-10-02T23:53:41Z Generating 528Mb/sec @ 27671 messages/sec | topic: rep | 3.55ms avg latency
-2014-10-02T23:53:46Z Generating 516Mb/sec @ 27040 messages/sec | topic: rep | 3.73ms avg latency
-2014-10-02T23:53:51Z Generating 478Mb/sec @ 25039 messages/sec | topic: rep | 4.65ms avg latency
+2014-10-02T23:53:36Z Generating 546Mb/sec @ 28627 messages/sec | topic: rep | 3.32ms 90%ile latency
+2014-10-02T23:53:41Z Generating 528Mb/sec @ 27671 messages/sec | topic: rep | 3.55ms 90%ile latency
+2014-10-02T23:53:46Z Generating 516Mb/sec @ 27040 messages/sec | topic: rep | 3.73ms 90%ile latency
+2014-10-02T23:53:51Z Generating 478Mb/sec @ 25039 messages/sec | topic: rep | 4.65ms 90%ile latency
 </pre>
 
 ### Performance

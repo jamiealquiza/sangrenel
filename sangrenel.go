@@ -288,7 +288,7 @@ func main() {
 			// Delta is divided by update interval (5s) for per-second rate over output updates.
 			currCnt = fetchSent()
 			deltaCnt := currCnt - lastCnt
-			fmt.Printf("%s Generating %s @ %d messages/sec | topic: %s | %.2fms avg latency\n",
+			fmt.Printf("%s Generating %s @ %d messages/sec | topic: %s | %.2fms 90%%ile latency\n",
 				// Always be RFC'ing.
 				time.Now().Format(time.RFC3339),
 				calcOutput(deltaCnt),
