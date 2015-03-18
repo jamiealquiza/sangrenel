@@ -40,20 +40,20 @@ If a topic is referenced that does not yet exist, Sangrenel will create one with
 Sangrenel outputs metrics based on the previous 5 seconds of operation: the aggregate amount of data being produced, message transaction rate (or generated rate if using <code>--noop</code>) and 90th percentile worst latency average (time from message sent to receiving an ack from the broker). 
 
 <pre>
- % ./sangrenel -brokers="192.168.100.204:9092" -size=250 -topic=load -clients=4
+% ./sangrenel -brokers="192.168.100.204:9092" -size=250 -topic=load -clients=4
 
 ::: Sangrenel :::
 Starting 4 client workers, 5 producers per worker
 Message size 250 bytes
 
-client_2 connected
-client_3 connected
-client_4 connected
-client_1 connected
-2015-03-18T13:08:25-06:00 Generating 29Mb/sec @ 15228 messages/sec | topic: load | 2.11ms 90%ile latency
-2015-03-18T13:08:30-06:00 Generating 29Mb/sec @ 14955 messages/sec | topic: load | 2.32ms 90%ile latency
-2015-03-18T13:08:35-06:00 Generating 30Mb/sec @ 15532 messages/sec | topic: load | 2.05ms 90%ile latency
-2015-03-18T13:08:40-06:00 Generating 30Mb/sec @ 15501 messages/sec | topic: load | 2.10ms 90%ile latency
+2015/03/18 13:41:22 client_1 connected
+2015/03/18 13:41:22 client_3 connected
+2015/03/18 13:41:22 client_4 connected
+2015/03/18 13:41:22 client_2 connected
+2015/03/18 13:41:27 Generating 29Mb/sec @ 15224 messages/sec | topic: load | 2.08ms 90%ile latency
+2015/03/18 13:41:32 Generating 29Mb/sec @ 15234 messages/sec | topic: load | 2.07ms 90%ile latency
+2015/03/18 13:41:37 Generating 29Mb/sec @ 15324 messages/sec | topic: load | 2.10ms 90%ile latency
+2015/03/18 13:41:42 Generating 30Mb/sec @ 15574 messages/sec | topic: load | 2.01ms 90%ile latency
 </pre>
 
 ### Performance

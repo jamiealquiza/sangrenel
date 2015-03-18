@@ -24,6 +24,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"math/rand"
 	"os"
 	"os/signal"
@@ -81,7 +82,7 @@ func init() {
 func clientProducer(c kafka.Client) {
 	producer, err := kafka.NewSyncProducerFromClient(c)
 	if err != nil {
-		fmt.Println(err.Error())
+		log.Println(err.Error())
 	}
 	defer producer.Close()
 
@@ -113,7 +114,7 @@ func clientProducer(c kafka.Client) {
 			start = time.Now()
 			_, _, err = producer.SendMessage(msg)
 			if err != nil {
-				fmt.Println(err)
+				log.Println(err)
 			} else {
 				// Increment global sent count and fire off time since start value into the latency channel.
 				n++
@@ -160,9 +161,8 @@ func clientDummyProducer() {
 	}
 }
 
-// kafkaClient initializes a connection to a Kafka cluster.
-// Each client manages 5 clientProducer() (producer instances).
-// Fixed value since this seem to flatline throughput at ~5.
+// kafkaClient initializes a connection to a Kafka cluster and
+// initializes one or more clientProducer() (producer instances).
 func kafkaClient(n int) {
 	switch noop {
 	// If not noop, actually fire up Kafka connections and send messages.
@@ -170,9 +170,10 @@ func kafkaClient(n int) {
 		cId := "client_" + strconv.Itoa(n)
 		client, err := kafka.NewClient(brokers, kafka.NewConfig())
 		if err != nil {
-			panic(err)
+			log.Println(err)
+			os.Exit(1)
 		} else {
-			fmt.Printf("%s connected\n", cId)
+			log.Printf("%s connected\n", cId)
 		}
 		for i := 0; i < producers; i++ {
 			go clientProducer(client)
@@ -290,9 +291,7 @@ func main() {
 			// Delta is divided by update interval (5s) for per-second rate over output updates.
 			currCnt = fetchSent()
 			deltaCnt := currCnt - lastCnt
-			fmt.Printf("%s Generating %s @ %d messages/sec | topic: %s | %.2fms 90%%ile latency\n",
-				// Always be RFC'ing.
-				time.Now().Format(time.RFC3339),
+			log.Printf("Generating %s @ %d messages/sec | topic: %s | %.2fms 90%%ile latency\n",
 				calcOutput(deltaCnt),
 				deltaCnt/5,
 				topic,
