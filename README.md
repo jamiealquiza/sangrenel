@@ -20,8 +20,9 @@ Binary will be found at `$GOPATH/bin/sangrenel`
 Smashes Kafka queues with lots of messages. Usage overview:
 
 <pre>
-./sangrenel -h
+% ./sangrenel -h
 Usage of ./sangrenel:
+  -batch=0: Max messages per batch. Defaults to unlimited (0).
   -brokers="localhost:9092": Comma delimited list of Kafka brokers
   -clients=1: Number of Kafka client workers
   -noop=false: Test message generation performance, do not transmit messages
