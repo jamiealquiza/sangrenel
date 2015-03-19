@@ -60,4 +60,4 @@ Message size 250 bytes
 
 Sangrenel obliterating all cores on an EC2 c4.8xlarge instance in <code>noop</code> mode, generating over 6.4Gb/s of random message data:
 
-![ScreenShot](http://us-east.manta.joyent.com/jalquiza/public/github/sangrenel.png)
+![ScreenShot](http://us-east.manta.joyent.com/jalquiza/public/github/sangrenel-c4.png)
