@@ -44,7 +44,7 @@ var (
 	topic     string
 	msgSize   int64
 	msgRate   int64
-	batchSize	int
+	batchSize int
 	clients   int
 	producers int
 	noop      bool
