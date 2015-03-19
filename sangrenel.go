@@ -42,8 +42,9 @@ var (
 	// Configs.
 	brokers   []string
 	topic     string
-	msgSize   int
+	msgSize   int64
 	msgRate   int64
+	batchSize	int
 	clients   int
 	producers int
 	noop      bool
@@ -62,8 +63,9 @@ var (
 
 func init() {
 	flag.StringVar(&topic, "topic", "sangrenel", "Topic to publish to")
-	flag.IntVar(&msgSize, "size", 300, "Message size in bytes")
+	flag.Int64Var(&msgSize, "size", 300, "Message size in bytes")
 	flag.Int64Var(&msgRate, "rate", 100000000, "Apply a global message rate limit")
+	flag.IntVar(&batchSize, "batch", 0, "Max messages per batch. Defaults to unlimited (0).")
 	flag.BoolVar(&noop, "noop", false, "Test message generation performance, do not transmit messages")
 	flag.IntVar(&clients, "clients", 1, "Number of Kafka client workers")
 	flag.IntVar(&producers, "producers", 5, "Number of producer instances per client")
@@ -162,7 +164,12 @@ func kafkaClient(n int) {
 	// If not noop, actually fire up Kafka connections and send messages.
 	case false:
 		cId := "client_" + strconv.Itoa(n)
-		client, err := kafka.NewClient(brokers, kafka.NewConfig())
+
+		conf := kafka.NewConfig()
+		//conf.Producer.Compression = kafka.CompressionSnappy
+		conf.Producer.Flush.MaxMessages = batchSize
+
+		client, err := kafka.NewClient(brokers, conf)
 		if err != nil {
 			log.Println(err)
 			os.Exit(1)
@@ -263,9 +270,9 @@ func main() {
 	go latencyAggregator()
 
 	// Print Sangrenel startup info.
-	fmt.Printf("\n::: Sangrenel :::\nStarting %d client workers, %d producers per worker\nMessage size %d bytes\n\n",
-		clients, producers,
-		msgSize)
+	fmt.Println("\n::: Sangrenel :::")
+	fmt.Printf("\nStarting %d client workers, %d producers per worker\n", clients, producers)
+	fmt.Printf("Message size %d bytes, %d messages per batch\n\n", msgSize, batchSize)
 
 	// Start client workers.
 	for i := 0; i < clients; i++ {
