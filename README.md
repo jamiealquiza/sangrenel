@@ -17,7 +17,7 @@ Binary will be found at `$GOPATH/bin/sangrenel`
 
 ### Overview
 
-Smashes Kafka queues with lots of messages. Usage overview:
+Smashes Kafka queues with lots of messages and reports performance metrics (to console and optionally, Graphite). Usage overview:
 
 <pre>
 % ./sangrenel -h
@@ -26,6 +26,9 @@ Usage of ./sangrenel:
   -brokers="localhost:9092": Comma delimited list of Kafka brokers
   -clients=1: Number of Kafka client workers
   -compression="none": Message compression: none, gzip, snappy
+  -graphite-ip="": Destination Graphite IP address
+  -graphite-metrics-prefix="random": Top-level Graphite namespace prefix (defaults to hostname)
+  -graphite-port="": Destination Graphite plaintext port
   -noop=false: Test message generation performance, do not transmit messages
   -producers=5: Number of producer instances per client
   -rate=100000000: Apply a global message rate limit
@@ -39,10 +42,12 @@ Note: Sangrenel will automatically raise <code>GOMAXPROCS</code> to the value de
 
 If a topic is referenced that does not yet exist, Sangrenel will create one with a default of 2 partitions / 1 replica (or as defined in your Kafka server configuration). Alternative parition/replica topologies should be created manually prior to running Sangrenel.
 
-Sangrenel outputs metrics based on the previous 5 seconds of operation: the aggregate amount of data being produced, message transaction rate (or generated rate if using <code>--noop</code>) and 90th percentile worst latency average (time from message sent to receiving an ack from the broker). 
+Sangrenel outputs metrics based on the previous 5 seconds of operation: the aggregate amount of data being produced, message transaction rate (or generated rate if using <code>--noop</code>) and 90th percentile worst latency average (time from message sent to receiving an ack from the broker).
+
+If optionally defined, Graphite can be used as a secondary output location. This allows you to graph performance results in addition to overlaying Sangrenel metrics against Kafka cluster metrics that you may already be collecting in Graphite.
 
 <pre>
-% ./sangrenel -brokers="192.168.100.204:9092" -size=250 -topic=load -clients=4
+% ./sangrenel -brokers="192.168.100.204:9092" -size=250 -topic=load -clients=4 -graphite-ip="192.168.100.175" -graphite-port="2013" 
 
 ::: Sangrenel :::
 
@@ -50,16 +55,26 @@ Starting 4 client workers, 5 producers per worker
 Message size 250 bytes, 0 message limit per batch
 Compression: none
 
-2015/03/20 09:13:27 client_1 connected
-2015/03/20 09:13:27 client_2 connected
-2015/03/20 09:13:27 client_3 connected
-2015/03/20 09:13:27 client_4 connected
-2015/03/20 09:13:32 Generating 27Mb/sec @ 14083 messages/sec | topic: load | 2.30ms 90%ile latency
-2015/03/20 09:13:37 Generating 28Mb/sec @ 14731 messages/sec | topic: load | 2.18ms 90%ile latency
-2015/03/20 09:13:42 Generating 28Mb/sec @ 14709 messages/sec | topic: load | 2.22ms 90%ile latency
-2015/03/20 09:13:47 Generating 28Mb/sec @ 14927 messages/sec | topic: load | 2.13ms 90%ile latency
-2015/03/20 09:13:52 Generating 28Mb/sec @ 14893 messages/sec | topic: load | 2.20ms 90%ile latency
+2015/03/20 11:19:14 client_1 connected
+2015/03/20 11:19:14 client_2 connected
+2015/03/20 11:19:14 client_4 connected
+2015/03/20 11:19:15 client_3 connected
+2015/03/20 11:19:19 Generating 27Mb/sec @ 14387 messages/sec | topic: load | 2.30ms 90%ile latency
+2015/03/20 11:19:19 Metrics flushed to Graphite
+2015/03/20 11:19:24 Generating 28Mb/sec @ 14582 messages/sec | topic: load | 2.21ms 90%ile latency
+2015/03/20 11:19:24 Metrics flushed to Graphite
+2015/03/20 11:19:29 Generating 28Mb/sec @ 14772 messages/sec | topic: load | 2.22ms 90%ile latency
+2015/03/20 11:19:29 Metrics flushed to Graphite
+2015/03/20 11:19:34 Generating 29Mb/sec @ 15110 messages/sec | topic: load | 2.16ms 90%ile latency
+2015/03/20 11:19:34 Metrics flushed to Graphite
+2015/03/20 11:19:39 Generating 29Mb/sec @ 15057 messages/sec | topic: load | 2.16ms 90%ile latency
+2015/03/20 11:19:39 Metrics flushed to Graphite
 </pre>
+
+Messages/sec. vs latency:
+![ScreenShot](http://us-east.manta.joyent.com/jalquiza/public/github/sangrenel-graphite0.png)
+MB/s. vs latency (Sangrenel writes bytes amounts, so this can be viewed as Mb and Gb in Grafana):
+![ScreenShot](http://us-east.manta.joyent.com/jalquiza/public/github/sangrenel-graphite1.png)
 
 ### Performance
 

@@ -285,7 +285,9 @@ func main() {
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
 	// Fire up misc. tasks.
 	go latencyAggregator()
-	go graphiteWriter()
+	if graphiteIp != "" {
+		go graphiteWriter()
+	}
 
 	// Print Sangrenel startup info.
 	fmt.Println("\n::: Sangrenel :::")
@@ -329,7 +331,9 @@ func main() {
 			now := time.Now()
 			ts := float64(now.Unix())
 			metrics["timestamp"] = ts
-			metricsOutgoing <- metrics
+			if graphiteIp != "" {
+				metricsOutgoing <- metrics
+			}
 
 			log.Printf("Generating %s @ %.0f messages/sec | topic: %s | %.2fms 90%%ile latency\n",
 				outputString,
