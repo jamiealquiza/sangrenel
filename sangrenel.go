@@ -55,12 +55,12 @@ var (
 	chars = []byte("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890!@#$^&*(){}][:<>.")
 
 	// Counters / misc.
-	sig_chan        = make(chan os.Signal)
-	clientKill_chan = make(chan bool, 24)
+	signals        = make(chan os.Signal)
+	killClients = make(chan bool, 24)
 	sentCntr        = make(chan int64, 1)
 	latency         []float64
-	latency_chan    = make(chan float64, 1)
-	resetLat_chan   = make(chan bool, 1)
+	latencies    = make(chan float64, 1)
+	resetLatencies   = make(chan bool, 1)
 )
 
 func init() {
@@ -140,7 +140,7 @@ func clientProducer(c kafka.Client) {
 				default:
 					break
 				}
-				latency_chan <- time.Since(start).Seconds() * 1000
+				latencies <- time.Since(start).Seconds() * 1000
 			}
 		}
 		// If the global per-second rate limit was met,
@@ -203,7 +203,7 @@ func kafkaClient(n int) {
 			go clientDummyProducer()
 		}
 	}
-	<-clientKill_chan
+	<-killClients
 }
 
 // Returns a random message generated from the chars byte slice.
@@ -231,9 +231,9 @@ func fetchSent() int64 {
 func latencyAggregator() {
 	for {
 		select {
-		case i := <-latency_chan:
+		case i := <-latencies:
 			latency = append(latency, i)
-		case <-resetLat_chan:
+		case <-resetLatencies:
 			latency = latency[:0]
 		}
 	}
@@ -241,7 +241,7 @@ func latencyAggregator() {
 
 // Calculates aggregate raw message output in networking friendly units.
 // Gives an idea of minimum network traffic being generated.
-func calcOutput(n int64) string {
+func calcOutput(n int64) (float64, string) {
 	m := (float64(n) / 5) * float64(msgSize)
 	var o string
 	switch {
@@ -250,7 +250,7 @@ func calcOutput(n int64) string {
 	case m < 131072:
 		o = strconv.FormatFloat(m/1024, 'f', 0, 64) + "KB/sec"
 	}
-	return o
+	return m, o
 }
 
 // Fetches & resets current latencies set held by 'latencyAggregator()'.
@@ -265,7 +265,7 @@ func calcLatency() float64 {
 		// Fetch values.
 		lat := latency
 		// Issue the current values to be cleared.
-		resetLat_chan <- true
+		resetLatencies <- true
 		// Sort and sum values.
 		sort.Float64s(lat)
 		var sum float64
@@ -282,9 +282,10 @@ func calcLatency() float64 {
 
 func main() {
 	// Listens for signals.
-	signal.Notify(sig_chan, syscall.SIGINT, syscall.SIGTERM)
-	// Fires up 'latencyAggregator()'.
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+	// Fire up misc. tasks.
 	go latencyAggregator()
+	go graphiteWriter()
 
 	// Print Sangrenel startup info.
 	fmt.Println("\n::: Sangrenel :::")
@@ -313,23 +314,36 @@ func main() {
 		case <-tick:
 			// Set last and current to last read sent count.
 			lastCnt = currCnt
+
 			// Get actual current sent count, then delta from last count.
-			// Delta is divided by update interval (5s) for per-second rate over output updates.
+			// Delta is divided by update interval (5s) for per-second rate over a window.
 			currCnt = fetchSent()
 			deltaCnt := currCnt - lastCnt
-			log.Printf("Generating %s @ %d messages/sec | topic: %s | %.2fms 90%%ile latency\n",
-				calcOutput(deltaCnt),
-				deltaCnt/5,
+
+			outputBytes, outputString := calcOutput(deltaCnt)
+
+			// Update the metrics map which is also passed to the Graphite writer.
+			metrics["rate"] = float64(deltaCnt/5)
+			metrics["90th"] = calcLatency() // Well, this technically appends a small latency to the 5s interval.
+			metrics["output"] = outputBytes
+			now := time.Now()
+			ts := float64(now.Unix())
+			metrics["timestamp"] = ts
+			metricsOutgoing <- metrics
+
+			log.Printf("Generating %s @ %.0f messages/sec | topic: %s | %.2fms 90%%ile latency\n",
+				outputString,
+				metrics["rate"],
 				topic,
-				// Well, this technically appends a small latency to the 5s interval.
-				calcLatency())
+				metrics["90th"])
+
 		// Waits for signals. Currently just brutally kills Sangrenel.
-		case <-sig_chan:
+		case <-signals:
 			fmt.Println("Killing Connections")
 			for i := 0; i < clients; i++ {
-				clientKill_chan <- true
+				killClients <- true
 			}
-			close(clientKill_chan)
+			close(killClients)
 			time.Sleep(2 * time.Second)
 			os.Exit(0)
 		}
