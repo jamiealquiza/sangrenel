@@ -25,6 +25,7 @@ Usage of ./sangrenel:
   -batch=0: Max messages per batch. Defaults to unlimited (0).
   -brokers="localhost:9092": Comma delimited list of Kafka brokers
   -clients=1: Number of Kafka client workers
+  -compression="none": Message compression: none, gzip, snappy
   -noop=false: Test message generation performance, do not transmit messages
   -producers=5: Number of producer instances per client
   -rate=100000000: Apply a global message rate limit
@@ -44,17 +45,20 @@ Sangrenel outputs metrics based on the previous 5 seconds of operation: the aggr
 % ./sangrenel -brokers="192.168.100.204:9092" -size=250 -topic=load -clients=4
 
 ::: Sangrenel :::
-Starting 4 client workers, 5 producers per worker
-Message size 250 bytes
 
-2015/03/18 13:41:22 client_1 connected
-2015/03/18 13:41:22 client_3 connected
-2015/03/18 13:41:22 client_4 connected
-2015/03/18 13:41:22 client_2 connected
-2015/03/18 13:41:27 Generating 29Mb/sec @ 15224 messages/sec | topic: load | 2.08ms 90%ile latency
-2015/03/18 13:41:32 Generating 29Mb/sec @ 15234 messages/sec | topic: load | 2.07ms 90%ile latency
-2015/03/18 13:41:37 Generating 29Mb/sec @ 15324 messages/sec | topic: load | 2.10ms 90%ile latency
-2015/03/18 13:41:42 Generating 30Mb/sec @ 15574 messages/sec | topic: load | 2.01ms 90%ile latency
+Starting 4 client workers, 5 producers per worker
+Message size 250 bytes, 0 message limit per batch
+Compression: none
+
+2015/03/20 09:13:27 client_1 connected
+2015/03/20 09:13:27 client_2 connected
+2015/03/20 09:13:27 client_3 connected
+2015/03/20 09:13:27 client_4 connected
+2015/03/20 09:13:32 Generating 27Mb/sec @ 14083 messages/sec | topic: load | 2.30ms 90%ile latency
+2015/03/20 09:13:37 Generating 28Mb/sec @ 14731 messages/sec | topic: load | 2.18ms 90%ile latency
+2015/03/20 09:13:42 Generating 28Mb/sec @ 14709 messages/sec | topic: load | 2.22ms 90%ile latency
+2015/03/20 09:13:47 Generating 28Mb/sec @ 14927 messages/sec | topic: load | 2.13ms 90%ile latency
+2015/03/20 09:13:52 Generating 28Mb/sec @ 14893 messages/sec | topic: load | 2.20ms 90%ile latency
 </pre>
 
 ### Performance

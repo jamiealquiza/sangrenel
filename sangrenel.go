@@ -45,6 +45,8 @@ var (
 	msgSize   int64
 	msgRate   int64
 	batchSize int
+	compressionOpt string
+	compression kafka.CompressionCodec
 	clients   int
 	producers int
 	noop      bool
@@ -66,6 +68,7 @@ func init() {
 	flag.Int64Var(&msgSize, "size", 300, "Message size in bytes")
 	flag.Int64Var(&msgRate, "rate", 100000000, "Apply a global message rate limit")
 	flag.IntVar(&batchSize, "batch", 0, "Max messages per batch. Defaults to unlimited (0).")
+	flag.StringVar(&compressionOpt, "compression", "none", "Message compression: none, gzip, snappy")
 	flag.BoolVar(&noop, "noop", false, "Test message generation performance, do not transmit messages")
 	flag.IntVar(&clients, "clients", 1, "Number of Kafka client workers")
 	flag.IntVar(&producers, "producers", 5, "Number of producer instances per client")
@@ -73,6 +76,18 @@ func init() {
 	flag.Parse()
 
 	brokers = strings.Split(*brokerString, ",")
+
+	switch compressionOpt {
+	case "gzip":
+		compression = kafka.CompressionGZIP
+	case "snappy":
+		compression = kafka.CompressionSnappy
+	case "none":
+		compression = kafka.CompressionNone
+	default:
+		fmt.Printf("Invalid compression option: %s\n", compressionOpt)
+		os.Exit(1)
+	}
 
 	sentCntr <- 0
 	runtime.GOMAXPROCS(runtime.NumCPU())
@@ -166,7 +181,9 @@ func kafkaClient(n int) {
 		cId := "client_" + strconv.Itoa(n)
 
 		conf := kafka.NewConfig()
-		//conf.Producer.Compression = kafka.CompressionSnappy
+		if compression != kafka.CompressionNone {
+			conf.Producer.Compression = compression
+		}
 		conf.Producer.Flush.MaxMessages = batchSize
 
 		client, err := kafka.NewClient(brokers, conf)
@@ -272,7 +289,15 @@ func main() {
 	// Print Sangrenel startup info.
 	fmt.Println("\n::: Sangrenel :::")
 	fmt.Printf("\nStarting %d client workers, %d producers per worker\n", clients, producers)
-	fmt.Printf("Message size %d bytes, %d messages per batch\n\n", msgSize, batchSize)
+	fmt.Printf("Message size %d bytes, %d message limit per batch\n", msgSize, batchSize)
+	switch compressionOpt {
+	case "none":
+		fmt.Println("Compression: none\n")
+	case "gzip":
+		fmt.Println("Compression: GZIP\n")
+	case "snappy":
+		fmt.Println("Compression: Snappy\n")
+	}
 
 	// Start client workers.
 	for i := 0; i < clients; i++ {
