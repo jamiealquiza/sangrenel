@@ -40,16 +40,16 @@ import (
 
 var (
 	// Configs.
-	brokers   []string
-	topic     string
-	msgSize   int64
-	msgRate   int64
-	batchSize int
+	brokers        []string
+	topic          string
+	msgSize        int64
+	msgRate        int64
+	batchSize      int
 	compressionOpt string
-	compression kafka.CompressionCodec
-	clients   int
-	producers int
-	noop      bool
+	compression    kafka.CompressionCodec
+	clients        int
+	producers      int
+	noop           bool
 
 	// Character selection from which random messages are generated.
 	chars = []byte("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890!@#$^&*(){}][:<>.")
