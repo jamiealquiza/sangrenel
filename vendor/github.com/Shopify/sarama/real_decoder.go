@@ -19,7 +19,7 @@ func (rd *realDecoder) getInt8() (int8, error) {
 		return -1, ErrInsufficientData
 	}
 	tmp := int8(rd.raw[rd.off])
-	rd.off += binary.Size(tmp)
+	rd.off += 1
 	return tmp, nil
 }
 
@@ -29,7 +29,7 @@ func (rd *realDecoder) getInt16() (int16, error) {
 		return -1, ErrInsufficientData
 	}
 	tmp := int16(binary.BigEndian.Uint16(rd.raw[rd.off:]))
-	rd.off += binary.Size(tmp)
+	rd.off += 2
 	return tmp, nil
 }
 
@@ -39,7 +39,7 @@ func (rd *realDecoder) getInt32() (int32, error) {
 		return -1, ErrInsufficientData
 	}
 	tmp := int32(binary.BigEndian.Uint32(rd.raw[rd.off:]))
-	rd.off += binary.Size(tmp)
+	rd.off += 4
 	return tmp, nil
 }
 
@@ -49,7 +49,7 @@ func (rd *realDecoder) getInt64() (int64, error) {
 		return -1, ErrInsufficientData
 	}
 	tmp := int64(binary.BigEndian.Uint64(rd.raw[rd.off:]))
-	rd.off += binary.Size(tmp)
+	rd.off += 8
 	return tmp, nil
 }
 
@@ -64,7 +64,7 @@ func (rd *realDecoder) getArrayLength() (int, error) {
 		rd.off = len(rd.raw)
 		return -1, ErrInsufficientData
 	} else if tmp > 2*math.MaxUint16 {
-		return -1, PacketDecodingError{"getArrayLength failed: Invalid array length"}
+		return -1, PacketDecodingError{"invalid array length"}
 	}
 	return tmp, nil
 }
@@ -82,7 +82,7 @@ func (rd *realDecoder) getBytes() ([]byte, error) {
 
 	switch {
 	case n < -1:
-		return nil, PacketDecodingError{"getBytes failed: Invalid length"}
+		return nil, PacketDecodingError{"invalid byteslice length"}
 	case n == -1:
 		return nil, nil
 	case n == 0:
@@ -108,7 +108,7 @@ func (rd *realDecoder) getString() (string, error) {
 
 	switch {
 	case n < -1:
-		return "", PacketDecodingError{"getString failed: invalid length"}
+		return "", PacketDecodingError{"invalid string length"}
 	case n == -1:
 		return "", nil
 	case n == 0:
@@ -141,13 +141,13 @@ func (rd *realDecoder) getInt32Array() ([]int32, error) {
 	}
 
 	if n < 0 {
-		return nil, PacketDecodingError{"getInt32Array failed: invalid length"}
+		return nil, PacketDecodingError{"invalid array length"}
 	}
 
 	ret := make([]int32, n)
 	for i := range ret {
 		ret[i] = int32(binary.BigEndian.Uint32(rd.raw[rd.off:]))
-		rd.off += binary.Size(ret[i])
+		rd.off += 4
 	}
 	return ret, nil
 }
@@ -170,13 +170,13 @@ func (rd *realDecoder) getInt64Array() ([]int64, error) {
 	}
 
 	if n < 0 {
-		return nil, PacketDecodingError{"getInt64Array failed: invalid length"}
+		return nil, PacketDecodingError{"invalid array length"}
 	}
 
 	ret := make([]int64, n)
 	for i := range ret {
 		ret[i] = int64(binary.BigEndian.Uint64(rd.raw[rd.off:]))
-		rd.off += binary.Size(ret[i])
+		rd.off += 8
 	}
 	return ret, nil
 }

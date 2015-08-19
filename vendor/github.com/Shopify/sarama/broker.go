@@ -1,6 +1,7 @@
 package sarama
 
 import (
+	"crypto/tls"
 	"fmt"
 	"io"
 	"net"
@@ -68,7 +69,16 @@ func (b *Broker) Open(conf *Config) error {
 	go withRecover(func() {
 		defer b.lock.Unlock()
 
-		b.conn, b.connErr = net.DialTimeout("tcp", b.addr, conf.Net.DialTimeout)
+		dialer := net.Dialer{
+			Timeout:   conf.Net.DialTimeout,
+			KeepAlive: conf.Net.KeepAlive,
+		}
+
+		if conf.Net.TLS.Enable {
+			b.conn, b.connErr = tls.DialWithDialer(&dialer, "tcp", b.addr, conf.Net.TLS.Config)
+		} else {
+			b.conn, b.connErr = dialer.Dial("tcp", b.addr)
+		}
 		if b.connErr != nil {
 			b.conn = nil
 			atomic.StoreInt32(&b.opened, 0)
@@ -80,7 +90,11 @@ func (b *Broker) Open(conf *Config) error {
 		b.done = make(chan bool)
 		b.responses = make(chan responsePromise, b.conf.Net.MaxOpenRequests-1)
 
-		Logger.Printf("Connected to broker %s\n", b.addr)
+		if b.id >= 0 {
+			Logger.Printf("Connected to broker at %s (registered as #%d)\n", b.addr, b.id)
+		} else {
+			Logger.Printf("Connected to broker at %s (unregistered)\n", b.addr)
+		}
 		go withRecover(b.responseReceiver)
 	})
 
@@ -225,7 +239,7 @@ func (b *Broker) FetchOffset(request *OffsetFetchRequest) (*OffsetFetchResponse,
 	return response, nil
 }
 
-func (b *Broker) send(req requestEncoder, promiseResponse bool) (*responsePromise, error) {
+func (b *Broker) send(rb requestBody, promiseResponse bool) (*responsePromise, error) {
 	b.lock.Lock()
 	defer b.lock.Unlock()
 
@@ -236,8 +250,8 @@ func (b *Broker) send(req requestEncoder, promiseResponse bool) (*responsePromis
 		return nil, ErrNotConnected
 	}
 
-	fullRequest := request{b.correlationID, b.conf.ClientID, req}
-	buf, err := encode(&fullRequest)
+	req := &request{correlationID: b.correlationID, clientID: b.conf.ClientID, body: rb}
+	buf, err := encode(req)
 	if err != nil {
 		return nil, err
 	}
@@ -257,13 +271,13 @@ func (b *Broker) send(req requestEncoder, promiseResponse bool) (*responsePromis
 		return nil, nil
 	}
 
-	promise := responsePromise{fullRequest.correlationID, make(chan []byte), make(chan error)}
+	promise := responsePromise{req.correlationID, make(chan []byte), make(chan error)}
 	b.responses <- promise
 
 	return &promise, nil
 }
 
-func (b *Broker) sendAndReceive(req requestEncoder, res decoder) error {
+func (b *Broker) sendAndReceive(req requestBody, res decoder) error {
 	promise, err := b.send(req, res != nil)
 
 	if err != nil {
@@ -350,7 +364,7 @@ func (b *Broker) responseReceiver() {
 		if decodedHeader.correlationID != response.correlationID {
 			// TODO if decoded ID < cur ID, discard until we catch up
 			// TODO if decoded ID > cur ID, save it so when cur ID catches up we have a response
-			response.errors <- PacketDecodingError{fmt.Sprintf("CorrelationID didn't match, wanted %d, got %d", response.correlationID, decodedHeader.correlationID)}
+			response.errors <- PacketDecodingError{fmt.Sprintf("correlation ID didn't match, wanted %d, got %d", response.correlationID, decodedHeader.correlationID)}
 			continue
 		}
 
