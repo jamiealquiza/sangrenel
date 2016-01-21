@@ -74,9 +74,11 @@ Compression: none
 </pre>
 
 Messages/sec. vs latency:
+
 ![ScreenShot](http://us-east.manta.joyent.com/jalquiza/public/github/sangrenel-graphite0.png)
 
 MB/s. vs latency (Sangrenel writes byte values, so this can be viewed as Mb and Gb in Grafana):
+
 ![ScreenShot](http://us-east.manta.joyent.com/jalquiza/public/github/sangrenel-graphite1.png)
 
 ### Performance
