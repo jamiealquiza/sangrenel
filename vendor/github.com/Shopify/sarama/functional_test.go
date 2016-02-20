@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	toxiproxy "github.com/jamiealquiza/sangrenel/vendor/github.com/Shopify/toxiproxy/client"
+	toxiproxy "github.com/Shopify/toxiproxy/client"
 )
 
 const (
@@ -75,7 +75,7 @@ func checkKafkaAvailability(t testing.TB) {
 func checkKafkaVersion(t testing.TB, requiredVersion string) {
 	kafkaVersion := os.Getenv("KAFKA_VERSION")
 	if kafkaVersion == "" {
-		t.Logf("No KAFKA_VERSION set. This tests requires Kafka version %s or higher. Continuing...", requiredVersion)
+		t.Logf("No KAFKA_VERSION set. This test requires Kafka version %s or higher. Continuing...", requiredVersion)
 	} else {
 		available := parseKafkaVersion(kafkaVersion)
 		required := parseKafkaVersion(requiredVersion)
@@ -129,6 +129,8 @@ func (kv kafkaVersion) satisfies(other kafkaVersion) bool {
 
 		if v < ov {
 			return false
+		} else if v > ov {
+			return true
 		}
 	}
 	return true

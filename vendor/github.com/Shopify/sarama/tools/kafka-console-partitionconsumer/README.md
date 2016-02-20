@@ -8,7 +8,7 @@ on the standard output.
 
 ### Installation
 
-    go get github.com/jamiealquiza/sangrenel/vendor/github.com/Shopify/sarama/tools/kafka-console-partitionconsumer
+    go get github.com/Shopify/sarama/tools/kafka-console-partitionconsumer
 
 ### Usage
 

@@ -7,4 +7,4 @@ Some of these tools mirror tools that ship with Kafka, but these tools won't req
 - [kafka-console-partitionconsumer](./kafka-console-partitionconsumer): (deprecated) a command line tool to consume a single partition of a topic on your Kafka cluster.
 - [kafka-console-consumer](./kafka-console-consumer): a command line tool to consume arbitrary partitions of a topic on your Kafka cluster.
 
-To install all tools, run `go get github.com/jamiealquiza/sangrenel/vendor/github.com/Shopify/sarama/tools/...`
+To install all tools, run `go get github.com/Shopify/sarama/tools/...`

@@ -16,10 +16,10 @@ package mocks
 import (
 	"errors"
 
-	"github.com/jamiealquiza/sangrenel/vendor/github.com/Shopify/sarama"
+	"github.com/Shopify/sarama"
 )
 
-// A simple interface that includes the testing.T methods we use to report
+// ErrorReporter is a simple interface that includes the testing.T methods we use to report
 // expectation violations when using the mock objects.
 type ErrorReporter interface {
 	Errorf(string, ...interface{})
