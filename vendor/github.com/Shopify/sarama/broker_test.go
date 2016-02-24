@@ -5,23 +5,25 @@ import (
 	"testing"
 )
 
-func ExampleBroker() error {
+func ExampleBroker() {
 	broker := NewBroker("localhost:9092")
 	err := broker.Open(nil)
 	if err != nil {
-		return err
+		panic(err)
 	}
 
 	request := MetadataRequest{Topics: []string{"myTopic"}}
 	response, err := broker.GetMetadata(&request)
 	if err != nil {
 		_ = broker.Close()
-		return err
+		panic(err)
 	}
 
 	fmt.Println("There are", len(response.Topics), "topics active in the cluster.")
 
-	return broker.Close()
+	if err = broker.Close(); err != nil {
+		panic(err)
+	}
 }
 
 type mockEncoder struct {
@@ -172,6 +174,78 @@ var brokerTestTable = []struct {
 			}
 			if response == nil {
 				t.Error("Offset request got no response!")
+			}
+		}},
+
+	{[]byte{0x00, 0x17, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+		func(t *testing.T, broker *Broker) {
+			request := JoinGroupRequest{}
+			response, err := broker.JoinGroup(&request)
+			if err != nil {
+				t.Error(err)
+			}
+			if response == nil {
+				t.Error("JoinGroup request got no response!")
+			}
+		}},
+
+	{[]byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+		func(t *testing.T, broker *Broker) {
+			request := SyncGroupRequest{}
+			response, err := broker.SyncGroup(&request)
+			if err != nil {
+				t.Error(err)
+			}
+			if response == nil {
+				t.Error("SyncGroup request got no response!")
+			}
+		}},
+
+	{[]byte{0x00, 0x00},
+		func(t *testing.T, broker *Broker) {
+			request := LeaveGroupRequest{}
+			response, err := broker.LeaveGroup(&request)
+			if err != nil {
+				t.Error(err)
+			}
+			if response == nil {
+				t.Error("LeaveGroup request got no response!")
+			}
+		}},
+
+	{[]byte{0x00, 0x00},
+		func(t *testing.T, broker *Broker) {
+			request := HeartbeatRequest{}
+			response, err := broker.Heartbeat(&request)
+			if err != nil {
+				t.Error(err)
+			}
+			if response == nil {
+				t.Error("Heartbeat request got no response!")
+			}
+		}},
+
+	{[]byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+		func(t *testing.T, broker *Broker) {
+			request := ListGroupsRequest{}
+			response, err := broker.ListGroups(&request)
+			if err != nil {
+				t.Error(err)
+			}
+			if response == nil {
+				t.Error("ListGroups request got no response!")
+			}
+		}},
+
+	{[]byte{0x00, 0x00, 0x00, 0x00},
+		func(t *testing.T, broker *Broker) {
+			request := DescribeGroupsRequest{}
+			response, err := broker.DescribeGroups(&request)
+			if err != nil {
+				t.Error(err)
+			}
+			if response == nil {
+				t.Error("DescribeGroups request got no response!")
 			}
 		}},
 }

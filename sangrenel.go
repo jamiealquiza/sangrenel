@@ -35,7 +35,7 @@ import (
 	"syscall"
 	"time"
 
-	kafka "github.com/jamiealquiza/sangrenel/vendor/github.com/Shopify/sarama"
+	kafka "github.com/Shopify/sarama"
 )
 
 var (
