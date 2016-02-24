@@ -10,8 +10,6 @@ NOTE: Sangrenel locally bundles the latest release (v1.8.0) of Sarama (the Go cl
 Assuming Go is installed (tested with 1.6) and $GOPATH is set:
 
 - `go get github.com/jamiealquiza/sangrenel`
-- `cd $GOPATH/src/github.com/jamiealquiza/sangrenel`
-- `git checkout updates`
 - `go install github.com/jamiealquiza/sangrenel`
 
 Binary will be found at `$GOPATH/bin/sangrenel`
