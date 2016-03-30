@@ -42,7 +42,7 @@ var (
 	// Configs.
 	brokers        []string
 	topic          string
-	msgSize        int64
+	msgSize        int
 	msgRate        int64
 	batchSize      int
 	compressionOpt string
@@ -65,7 +65,7 @@ var (
 
 func init() {
 	flag.StringVar(&topic, "topic", "sangrenel", "Topic to publish to")
-	flag.Int64Var(&msgSize, "size", 300, "Message size in bytes")
+	flag.IntVar(&msgSize, "size", 300, "Message size in bytes")
 	flag.Int64Var(&msgRate, "rate", 100000000, "Apply a global message rate limit")
 	flag.IntVar(&batchSize, "batch", 0, "Max messages per batch. Defaults to unlimited (0).")
 	flag.StringVar(&compressionOpt, "compression", "none", "Message compression: none, gzip, snappy")
@@ -185,6 +185,8 @@ func kafkaClient(n int) {
 			conf.Producer.Compression = compression
 		}
 		conf.Producer.Flush.MaxMessages = batchSize
+
+		conf.Producer.MaxMessageBytes = msgSize + 50
 
 		client, err := kafka.NewClient(brokers, conf)
 		if err != nil {
