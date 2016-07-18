@@ -23,19 +23,19 @@ package main
 
 import (
 	"flag"
-	"net"
-	"log"
-	"time"
 	"fmt"
+	"log"
+	"net"
 	"os"
+	"time"
 )
 
 var (
-	graphiteIp     string
-	graphitePort   string
-	metricsPrefix  string
+	graphiteIp    string
+	graphitePort  string
+	metricsPrefix string
 
-	metrics = make(map[string]float64)
+	metrics         = make(map[string]float64)
 	metricsOutgoing = make(chan map[string]float64, 30)
 )
 

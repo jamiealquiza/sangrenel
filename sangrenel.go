@@ -55,11 +55,11 @@ var (
 
 	// Counters / misc.
 	signals        = make(chan os.Signal)
-	killClients = make(chan bool, 24)
-	sentCntr        = make(chan int64, 1)
-	latency         []float64
-	latencies    = make(chan float64, 1)
-	resetLatencies   = make(chan bool, 1)
+	killClients    = make(chan bool, 24)
+	sentCntr       = make(chan int64, 1)
+	latency        []float64
+	latencies      = make(chan float64, 1)
+	resetLatencies = make(chan bool, 1)
 )
 
 func init() {
@@ -325,7 +325,7 @@ func main() {
 			outputBytes, outputString := calcOutput(deltaCnt)
 
 			// Update the metrics map which is also passed to the Graphite writer.
-			metrics["rate"] = float64(deltaCnt/5)
+			metrics["rate"] = float64(deltaCnt / 5)
 			metrics["90th"] = calcLatency() // Well, this technically appends a small latency to the 5s interval.
 			metrics["output"] = outputBytes
 			now := time.Now()
