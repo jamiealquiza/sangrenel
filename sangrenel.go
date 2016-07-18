@@ -28,7 +28,6 @@ import (
 	"math/rand"
 	"os"
 	"os/signal"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -90,7 +89,6 @@ func init() {
 	}
 
 	sentCntr <- 0
-	runtime.GOMAXPROCS(runtime.NumCPU())
 }
 
 // clientProducer generates random messages and writes to Kafka.

@@ -1,11 +1,11 @@
 sangrenel
 =========
 
-"...basically a cloth bag filled with small jagged pieces of scrap iron"
+*"...basically a cloth bag filled with small jagged pieces of scrap iron"*
 
 ### Installation
 
-NOTE: Sangrenel locally bundles the latest release (v1.8.0) of Sarama (the Go client library), which builds properly with Sangrenel - but the functionally with this version has not been extensively tested.
+NOTE: Sangrenel locally vendors v1.8.0 of Sarama (the Go Kafka client library), which builds properly with Sangrenel - but the functionally with this version has not been extensively tested.
 
 Assuming Go is installed (tested with 1.6) and $GOPATH is set:
 
@@ -16,7 +16,9 @@ Binary will be found at `$GOPATH/bin/sangrenel`
 
 ### Overview
 
-Smashes Kafka queues with lots of messages and reports performance metrics (to console and optionally, Graphite). Usage overview:
+Smashes Kafka queues with lots of messages and reports performance metrics (to console and optionally, Graphite). Used in my Kafka on AWS load testing [blog post](https://grey-boundary.io/load-testing-apache-kafka-on-aws/). While using this tool, keep in mind that any benchmarking scenario is an examination of total systems performance and that the testing software itself is part of the system (meaning you're not just testing Kafka, but Kafka+Sangrenel).
+
+Usage overview:
 
 <pre>
 % ./sangrenel -h
@@ -35,9 +37,9 @@ Usage of ./sangrenel:
   -topic="sangrenel": Topic to publish to
 </pre>
 
-The <code>-clients</code> directive initializes n Kafka clients. Each client manages 5 Kafka producer instances (overridden with <code>-producers</code>) in goroutines that synchronously publish random messages of <code>-size</code> bytes to the referenced Kafka cluster/topic, as fast as possible. Kafka client worker counts need to be scaled up in order to produce more throughput, as each client connection maxes out throughput with roughly 5 producers instances. Configuring these variables allows you to roughly model arbitary topologies of connection counts and workers per connection. The <code>-rate</code> directive allows you to place a global cap on the total message rate for all workers combined.
+The <code>-clients</code> directive initializes n Kafka clients. Each client manages 5 Kafka producer instances (overridden with <code>-producers</code>) in goroutines that synchronously publish random messages of <code>-size</code> bytes to the referenced Kafka cluster/topic as fast as possible. Kafka client worker counts need to be scaled up in order to produce more throughput, as each client connection maxes out throughput with roughly 5 producers instances. Configuring these variables allows you to roughly model arbitary topologies of connection counts and workers per connection. The <code>-rate</code> directive allows you to place a global cap on the total message rate for all workers combined.
 
-Note: Sangrenel will automatically raise <code>GOMAXPROCS</code> to the value detected by <code>runtime.NumCPU()</code> to support increasing numbers of <code>-clients</code>. Sangrenel should be tested with <code>--noop</code> (messages are only generated but not transmitted to the brokers) in order to determine the maximum message rate that the configured message size and worker setting can generate. Otherwise, you may see a throughput rate that's computationally bound versus the actual limitation of the Kafka brokers being testing.
+Note: Sangrenel should be tested with <code>--noop</code> (messages are only generated but not transmitted to the brokers) in order to determine the maximum message rate that the configured message size and worker setting can generate. Otherwise, you may see a throughput rate that's computationally bound versus the actual limitation of the Kafka brokers being testing.
 
 If a topic is referenced that does not yet exist, Sangrenel will create one with a default of 2 partitions / 1 replica (or as defined in your Kafka server configuration). Alternative parition/replica topologies should be created manually prior to running Sangrenel.
 
