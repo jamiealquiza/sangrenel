@@ -43,7 +43,7 @@ Note: Sangrenel should be tested with <code>--noop</code> (messages are only gen
 
 If a topic is referenced that does not yet exist, Sangrenel will create one with a default of 2 partitions / 1 replica (or as defined in your Kafka server configuration). Alternative parition/replica topologies should be created manually prior to running Sangrenel.
 
-Sangrenel outputs metrics based on the previous 5 seconds of operation: the aggregate amount of data being produced, message transaction rate (or generated rate if using <code>--noop</code>) and 90th percentile worst latency average (time from message sent to receiving an ack from the broker).
+Sangrenel outputs metrics based on the previous 5 seconds of operation: the aggregate amount of data being produced, message transaction rate (or generated rate if using <code>--noop</code>) and top 10% worst latency average (time from message sent to receiving an ack from the broker).
 
 If optionally defined, Graphite can be used as a secondary output location. This allows you to graph performance results in addition to overlaying Sangrenel metrics against Kafka cluster metrics that you may already be collecting in Graphite.
 
@@ -60,15 +60,15 @@ Compression: none
 2015/03/20 11:19:14 client_2 connected
 2015/03/20 11:19:14 client_4 connected
 2015/03/20 11:19:15 client_3 connected
-2015/03/20 11:19:19 Generating 27Mb/sec @ 14387 messages/sec | topic: load | 2.30ms 90%ile latency
+2015/03/20 11:19:19 Generating 27Mb/sec @ 14387 messages/sec | topic: load | 2.30ms top 10% latency
 2015/03/20 11:19:19 Metrics flushed to Graphite
-2015/03/20 11:19:24 Generating 28Mb/sec @ 14582 messages/sec | topic: load | 2.21ms 90%ile latency
+2015/03/20 11:19:24 Generating 28Mb/sec @ 14582 messages/sec | topic: load | 2.21ms top 10% latency
 2015/03/20 11:19:24 Metrics flushed to Graphite
-2015/03/20 11:19:29 Generating 28Mb/sec @ 14772 messages/sec | topic: load | 2.22ms 90%ile latency
+2015/03/20 11:19:29 Generating 28Mb/sec @ 14772 messages/sec | topic: load | 2.22ms top 10% latency
 2015/03/20 11:19:29 Metrics flushed to Graphite
-2015/03/20 11:19:34 Generating 29Mb/sec @ 15110 messages/sec | topic: load | 2.16ms 90%ile latency
+2015/03/20 11:19:34 Generating 29Mb/sec @ 15110 messages/sec | topic: load | 2.16ms top 10% latency
 2015/03/20 11:19:34 Metrics flushed to Graphite
-2015/03/20 11:19:39 Generating 29Mb/sec @ 15057 messages/sec | topic: load | 2.16ms 90%ile latency
+2015/03/20 11:19:39 Generating 29Mb/sec @ 15057 messages/sec | topic: load | 2.16ms top 10% latency
 2015/03/20 11:19:39 Metrics flushed to Graphite
 </pre>
 

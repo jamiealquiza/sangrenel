@@ -254,7 +254,7 @@ func calcOutput(n int64) (float64, string) {
 }
 
 // Fetches & resets current latencies set held by 'latencyAggregator()'.
-// Sorts then averages the 90th percentile worst latencies.
+// Sorts then averages the top 10% worst latencies.
 func calcLatency() float64 {
 	var avg float64
 	// With 'noop', we don't have latencies to operate on.
@@ -269,7 +269,7 @@ func calcLatency() float64 {
 		// Sort and sum values.
 		sort.Float64s(lat)
 		var sum float64
-		// Get percentile count and values, sum values.
+		// Get top 10%, sum values.
 		topn := int(float64(len(lat)) * 0.90)
 		for i := topn; i < len(lat); i++ {
 			sum += lat[i]
@@ -326,7 +326,7 @@ func main() {
 
 			// Update the metrics map which is also passed to the Graphite writer.
 			metrics["rate"] = float64(deltaCnt / 5)
-			metrics["90th"] = calcLatency() // Well, this technically appends a small latency to the 5s interval.
+			metrics["10p"] = calcLatency() // Well, this technically appends a small latency to the 5s interval.
 			metrics["output"] = outputBytes
 			now := time.Now()
 			ts := float64(now.Unix())
@@ -335,11 +335,11 @@ func main() {
 				metricsOutgoing <- metrics
 			}
 
-			log.Printf("Generating %s @ %.0f messages/sec | topic: %s | %.2fms 90%%ile latency\n",
+			log.Printf("Generating %s @ %.0f messages/sec | topic: %s | %.2fms top 10%% latency\n",
 				outputString,
 				metrics["rate"],
 				topic,
-				metrics["90th"])
+				metrics["10p"])
 
 		// Waits for signals. Currently just brutally kills Sangrenel.
 		case <-signals:
