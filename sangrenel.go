@@ -50,7 +50,7 @@ var (
 	producers      int
 	noop           bool
 
-	// Character selection from which random messages are generated.
+	// Character selection for random messages.
 	chars = []byte("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890!@#$^&*(){}][:<>.")
 
 	// Counters / misc.
@@ -101,7 +101,6 @@ func clientProducer(c kafka.Client) {
 	}
 	defer producer.Close()
 
-	// Instantiate rand per producer to avoid mutex contention.
 	source := rand.NewSource(time.Now().UnixNano())
 	generator := rand.New(source)
 	msgData := make([]byte, msgSize)
@@ -122,14 +121,14 @@ func clientProducer(c kafka.Client) {
 		for fetchSent()-countStart < msgRate {
 			randMsg(msgData, *generator)
 			msg := &kafka.ProducerMessage{Topic: topic, Value: kafka.ByteEncoder(msgData)}
-			// We start timing after the message is created.
-			// This ensures latency metering from the time between message sent and receiving an ack.
+
 			start = time.Now()
 			_, _, err = producer.SendMessage(msg)
 			if err != nil {
 				log.Println(err)
 			} else {
-				// Increment global sent count and fire off time since start value into the latency channel.
+				// Increment global sent count and fire off 
+				// time since start value into the latency channel.
 				n++
 				select {
 				case <-tick:
@@ -214,7 +213,7 @@ func randMsg(m []byte, generator rand.Rand) {
 	}
 }
 
-// Thread-safe global counter functions.
+// Global counter functions.
 func incrSent(n int64) {
 	i := <-sentCntr
 	sentCntr <- i + n
@@ -225,9 +224,9 @@ func fetchSent() int64 {
 	return i
 }
 
-// Thread-safe receiver for latency values captured by all producer goroutines.
+// latencyAggregator receives latency values captured by all producer goroutines.
 // May want to do something smart about this to limit time to sort
-// huge slices in high-throughput configurations where lots of latency values are received.
+// huge slices in high-throughput configurations.
 func latencyAggregator() {
 	for {
 		select {
@@ -239,8 +238,7 @@ func latencyAggregator() {
 	}
 }
 
-// Calculates aggregate raw message output in networking friendly units.
-// Gives an idea of minimum network traffic being generated.
+// Calculates aggregate raw message output in human / network units.
 func calcOutput(n int64) (float64, string) {
 	m := (float64(n) / 5) * float64(msgSize)
 	var o string
@@ -309,7 +307,7 @@ func main() {
 
 	// Start Sangrenel periodic info output.
 	tick := time.Tick(5 * time.Second)
-	// Count mile-markers for tracking message rates.
+
 	var currCnt, lastCnt int64
 	for {
 		select {
