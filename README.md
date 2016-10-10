@@ -48,35 +48,59 @@ Sangrenel outputs metrics based on the previous 5 seconds of operation: the aggr
 If optionally defined, Graphite can be used as a secondary output location. This allows you to graph performance results in addition to overlaying Sangrenel metrics against Kafka cluster metrics that you may already be collecting in Graphite.
 
 <pre>
-% ./sangrenel -brokers="192.168.100.204:9092" -size=250 -topic=load -clients=4 -graphite-ip="192.168.100.175" -graphite-port="2013" 
+% ./sangrenel -brokers="192.168.100.204:9092" -size=250 -topic=load -clients=3 
 
 ::: Sangrenel :::
 
-Starting 4 client workers, 5 producers per worker
-Message size 250 bytes, 0 message limit per batch
+Starting 3 client workers, 5 producers per worker
+Message size 300 bytes, 0 message limit per batch
 Compression: none
+2016/10/10 17:27:16 client_2 connected
+2016/10/10 17:27:16 client_1 connected
+2016/10/10 17:27:16 client_3 connected
 
-2015/03/20 11:19:14 client_1 connected
-2015/03/20 11:19:14 client_2 connected
-2015/03/20 11:19:14 client_4 connected
-2015/03/20 11:19:15 client_3 connected
-2015/03/20 11:19:19 Generating 27Mb/sec @ 14387 messages/sec | topic: load | 2.30ms top 10% latency
-2015/03/20 11:19:19 Metrics flushed to Graphite
-2015/03/20 11:19:24 Generating 28Mb/sec @ 14582 messages/sec | topic: load | 2.21ms top 10% latency
-2015/03/20 11:19:24 Metrics flushed to Graphite
-2015/03/20 11:19:29 Generating 28Mb/sec @ 14772 messages/sec | topic: load | 2.22ms top 10% latency
-2015/03/20 11:19:29 Metrics flushed to Graphite
-2015/03/20 11:19:34 Generating 29Mb/sec @ 15110 messages/sec | topic: load | 2.16ms top 10% latency
-2015/03/20 11:19:34 Metrics flushed to Graphite
-2015/03/20 11:19:39 Generating 29Mb/sec @ 15057 messages/sec | topic: load | 2.16ms top 10% latency
-2015/03/20 11:19:39 Metrics flushed to Graphite
+2016/10/10 17:27:21 Generating 84Mb/sec @ 36590 messages/sec | topic: sangrenel | 0.66ms top 10% latency
+182950 samples of 182950 events
+Total:			1m12.664330146s
+Avg.:			397.181µs
+Median: 		381.957µs
+95%ile:			490.055µs
+Longest 5%:		656.682µs
+Shortest 5%:	319.556µs
+Max:			24.062776ms
+Min:			130.88µs
+Rate/sec.:		36589.96
+
+2016/10/10 17:27:26 Generating 82Mb/sec @ 35969 messages/sec | topic: sangrenel | 0.64ms top 10% latency
+178730 samples of 178730 events
+Total:			1m12.351815251s
+Avg.:			404.81µs
+Median: 		388.343µs
+95%ile:			530.174µs
+Longest 5%:		642.02µs
+Shortest 5%:	312.688µs
+Max:			3.790078ms
+Min:			93.938µs
+Rate/sec.:		35968.50
+
+2016/10/10 17:27:31 Generating 79Mb/sec @ 34809 messages/sec | topic: sangrenel | 0.74ms top 10% latency
+172750 samples of 172750 events
+Total:			1m12.315903042s
+Avg.:			418.615µs
+Median: 		394.741µs
+95%ile:			574.729µs
+Longest 5%:		740.951µs
+Shortest 5%:	316.336µs
+Max:			4.230673ms
+Min:			118.54µs
+Rate/sec.:		34809.11
 </pre>
 
-Messages/sec. vs latency:
+Messages/sec. vs latency output, Graphite output:
 
 ![ScreenShot](http://us-east.manta.joyent.com/jalquiza/public/github/sangrenel-graphite0.png)
 
-MB/s. vs latency (Sangrenel writes byte values, so this can be viewed as Mb and Gb in Grafana):
+MB/s. vs latency (Sangrenel writes byte values; this can also be viewed as Mb and Gb in Grafana):
 
 ![ScreenShot](http://us-east.manta.joyent.com/jalquiza/public/github/sangrenel-graphite1.png)
 
