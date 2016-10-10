@@ -28,13 +28,13 @@ import (
 	"math/rand"
 	"os"
 	"os/signal"
-	"sort"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	kafka "github.com/Shopify/sarama"
+	"github.com/jamiealquiza/tachymeter"
 )
 
 var (
@@ -54,12 +54,9 @@ var (
 	chars = []byte("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890!@#$^&*(){}][:<>.")
 
 	// Counters / misc.
-	signals        = make(chan os.Signal)
-	killClients    = make(chan bool, 24)
-	sentCntr       = make(chan int64, 1)
-	latency        []float64
-	latencies      = make(chan float64, 1)
-	resetLatencies = make(chan bool, 1)
+	signals     = make(chan os.Signal)
+	killClients = make(chan bool, 24)
+	sentCntr    = make(chan int64, 1)
 )
 
 func init() {
@@ -94,7 +91,7 @@ func init() {
 // clientProducer generates random messages and writes to Kafka.
 // Workers track and limit message rates using incrSent() and fetchSent().
 // Default 5 instances of clientProducer are created under each Kafka client.
-func clientProducer(c kafka.Client) {
+func clientProducer(c kafka.Client, t *tachymeter.Tachymeter) {
 	producer, err := kafka.NewSyncProducerFromClient(c)
 	if err != nil {
 		log.Println(err.Error())
@@ -107,8 +104,9 @@ func clientProducer(c kafka.Client) {
 
 	// Use a local accumulator then periodically update global counter.
 	// Global counter can become a bottleneck with too many threads.
-	tick := time.Tick(3 * time.Millisecond)
+	//tick := time.Tick(2 * time.Millisecond)
 	var n int64
+	var times [10]time.Duration
 
 	for {
 		// Message rate limit works by having all clientProducer loops incrementing
@@ -127,17 +125,18 @@ func clientProducer(c kafka.Client) {
 			if err != nil {
 				log.Println(err)
 			} else {
-				// Increment global sent count and fire off 
-				// time since start value into the latency channel.
+				// Increment global counter and
+				// tachymeter every 10 messages.
 				n++
-				select {
-				case <-tick:
-					incrSent(n)
+				times[n-1] = time.Since(start)
+				if n == 10 {
+					incrSent(10)
+					t.AddCount(10)
+					for _, ts := range times {
+						t.AddTime(ts)
+					}
 					n = 0
-				default:
-					break
 				}
-				latencies <- time.Since(start).Seconds() * 1000
 			}
 		}
 		// If the global per-second rate limit was met,
@@ -171,7 +170,7 @@ func clientDummyProducer() {
 
 // kafkaClient initializes a connection to a Kafka cluster and
 // initializes one or more clientProducer() (producer instances).
-func kafkaClient(n int) {
+func kafkaClient(n int, t *tachymeter.Tachymeter) {
 	switch noop {
 	// If not noop, actually fire up Kafka connections and send messages.
 	case false:
@@ -193,7 +192,7 @@ func kafkaClient(n int) {
 			log.Printf("%s connected\n", cId)
 		}
 		for i := 0; i < producers; i++ {
-			go clientProducer(client)
+			go clientProducer(client, t)
 		}
 	// If noop, we're not creating connections at all.
 	// Just generate messages and burn CPU.
@@ -224,20 +223,6 @@ func fetchSent() int64 {
 	return i
 }
 
-// latencyAggregator receives latency values captured by all producer goroutines.
-// May want to do something smart about this to limit time to sort
-// huge slices in high-throughput configurations.
-func latencyAggregator() {
-	for {
-		select {
-		case i := <-latencies:
-			latency = append(latency, i)
-		case <-resetLatencies:
-			latency = latency[:0]
-		}
-	}
-}
-
 // Calculates aggregate raw message output in human / network units.
 func calcOutput(n int64) (float64, string) {
 	m := (float64(n) / 5) * float64(msgSize)
@@ -251,38 +236,10 @@ func calcOutput(n int64) (float64, string) {
 	return m, o
 }
 
-// Fetches & resets current latencies set held by 'latencyAggregator()'.
-// Sorts then averages the top 10% worst latencies.
-func calcLatency() float64 {
-	var avg float64
-	// With 'noop', we don't have latencies to operate on.
-	switch noop {
-	case true:
-		break
-	default:
-		// Fetch values.
-		lat := latency
-		// Issue the current values to be cleared.
-		resetLatencies <- true
-		// Sort and sum values.
-		sort.Float64s(lat)
-		var sum float64
-		// Get top 10%, sum values.
-		topn := int(float64(len(lat)) * 0.90)
-		for i := topn; i < len(lat); i++ {
-			sum += lat[i]
-		}
-		// Calc average.
-		avg = sum / float64(len(lat)-topn)
-	}
-	return avg
-}
-
 func main() {
 	// Listens for signals.
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
-	// Fire up misc. tasks.
-	go latencyAggregator()
+
 	if graphiteIp != "" {
 		go graphiteWriter()
 	}
@@ -293,25 +250,31 @@ func main() {
 	fmt.Printf("Message size %d bytes, %d message limit per batch\n", msgSize, batchSize)
 	switch compressionOpt {
 	case "none":
-		fmt.Println("Compression: none\n")
+		fmt.Println("Compression: none")
 	case "gzip":
-		fmt.Println("Compression: GZIP\n")
+		fmt.Println("Compression: GZIP")
 	case "snappy":
-		fmt.Println("Compression: Snappy\n")
+		fmt.Println("Compression: Snappy")
 	}
+
+	t := tachymeter.New(&tachymeter.Config{Size: 1000000, Safe: true})
 
 	// Start client workers.
 	for i := 0; i < clients; i++ {
-		go kafkaClient(i + 1)
+		go kafkaClient(i+1, t)
 	}
 
 	// Start Sangrenel periodic info output.
 	tick := time.Tick(5 * time.Second)
 
 	var currCnt, lastCnt int64
+	start := time.Now()
 	for {
 		select {
 		case <-tick:
+			// Set tachymeter wall time.
+			t.SetWallTime(time.Since(start))
+
 			// Set last and current to last read sent count.
 			lastCnt = currCnt
 
@@ -320,24 +283,34 @@ func main() {
 			currCnt = fetchSent()
 			deltaCnt := currCnt - lastCnt
 
+			stats := t.Calc()
+			t.Reset()
+
 			outputBytes, outputString := calcOutput(deltaCnt)
 
-			// Update the metrics map which is also passed to the Graphite writer.
-			metrics["rate"] = float64(deltaCnt / 5)
-			metrics["10p"] = calcLatency() // Well, this technically appends a small latency to the 5s interval.
+			// Update the metrics map for the Graphite writer.
+			metrics["rate"] = stats.Rate.Second
 			metrics["output"] = outputBytes
+			metrics["5p"] = (float64(stats.Time.Long5p.Nanoseconds()) / 1000) / 1000
+			// Add ts for Graphite.
 			now := time.Now()
 			ts := float64(now.Unix())
 			metrics["timestamp"] = ts
+
 			if graphiteIp != "" {
 				metricsOutgoing <- metrics
 			}
 
-			log.Printf("Generating %s @ %.0f messages/sec | topic: %s | %.2fms top 10%% latency\n",
+			log.Printf("\n\nGenerating %s @ %.0f messages/sec | topic: %s | %.2fms top 10%% latency\n",
 				outputString,
 				metrics["rate"],
 				topic,
-				metrics["10p"])
+				metrics["5p"])
+
+			stats.Dump()
+
+			// Reset interval time.
+			start = time.Now()
 
 		// Waits for signals. Currently just brutally kills Sangrenel.
 		case <-signals:
