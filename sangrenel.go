@@ -301,7 +301,8 @@ func main() {
 				metricsOutgoing <- metrics
 			}
 
-			log.Printf("\n\nGenerating %s @ %.0f messages/sec | topic: %s | %.2fms top 10%% latency\n",
+			fmt.Println()
+			log.Printf("Generating %s @ %.0f messages/sec | topic: %s | %.2fms top 5%% latency\n",
 				outputString,
 				metrics["rate"],
 				topic,
