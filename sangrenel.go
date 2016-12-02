@@ -257,7 +257,7 @@ func main() {
 		fmt.Println("Compression: Snappy")
 	}
 
-	t := tachymeter.New(&tachymeter.Config{Size: 1000000, Safe: true})
+	t := tachymeter.New(&tachymeter.Config{Size: 1000, Safe: true})
 
 	// Start client workers.
 	for i := 0; i < clients; i++ {
@@ -284,7 +284,6 @@ func main() {
 			deltaCnt := currCnt - lastCnt
 
 			stats := t.Calc()
-			t.Reset()
 
 			outputBytes, outputString := calcOutput(deltaCnt)
 
@@ -309,6 +308,14 @@ func main() {
 				metrics["5p"])
 
 			stats.Dump()
+
+			// Check if the tacymeter size needs to be increased
+			// to avoid sampling. Otherwise, just reset it.
+			if int(deltaCnt) > len(t.Times) {
+				t = tachymeter.New(&tachymeter.Config{Size: 2 * len(t.Times), Safe: true})
+			} else {
+				t.Reset()
+			}
 
 			// Reset interval time.
 			start = time.Now()
