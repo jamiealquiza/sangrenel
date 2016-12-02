@@ -104,7 +104,7 @@ func clientProducer(c kafka.Client, t *tachymeter.Tachymeter) {
 
 	// Use a local accumulator then periodically update global counter.
 	// Global counter can become a bottleneck with too many threads.
-	//tick := time.Tick(2 * time.Millisecond)
+	// tick := time.Tick(2 * time.Millisecond)
 	var n int64
 	var times [10]time.Duration
 
@@ -147,23 +147,29 @@ func clientProducer(c kafka.Client, t *tachymeter.Tachymeter) {
 
 // clientDummyProducer is a dummy function that kafkaClient calls if noop is True.
 // It is used in place of starting actual Kafka client connections to test message creation performance.
-func clientDummyProducer() {
+func clientDummyProducer(t *tachymeter.Tachymeter) {
 	source := rand.NewSource(time.Now().UnixNano())
 	generator := rand.New(source)
 	msg := make([]byte, msgSize)
 
-	tick := time.Tick(10 * time.Millisecond)
 	var n int64
+	var times [10]time.Duration
 
 	for {
+		start := time.Now()
 		randMsg(msg, *generator)
+
+		// Increment global counter and
+		// tachymeter every 10 messages.
 		n++
-		select {
-		case <-tick:
-			incrSent(n)
+		times[n-1] = time.Since(start)
+		if n == 10 {
+			incrSent(10)
+			t.AddCount(10)
+			for _, ts := range times {
+				t.AddTime(ts)
+			}
 			n = 0
-		default:
-			break
 		}
 	}
 }
@@ -198,7 +204,7 @@ func kafkaClient(n int, t *tachymeter.Tachymeter) {
 	// Just generate messages and burn CPU.
 	default:
 		for i := 0; i < producers; i++ {
-			go clientDummyProducer()
+			go clientDummyProducer(t)
 		}
 	}
 	<-killClients
@@ -312,7 +318,8 @@ func main() {
 			// Check if the tacymeter size needs to be increased
 			// to avoid sampling. Otherwise, just reset it.
 			if int(deltaCnt) > len(t.Times) {
-				t = tachymeter.New(&tachymeter.Config{Size: 2 * len(t.Times), Safe: true})
+				newTachy := tachymeter.New(&tachymeter.Config{Size: int(2 * deltaCnt), Safe: true})
+				*t = *newTachy
 			} else {
 				t.Reset()
 			}
