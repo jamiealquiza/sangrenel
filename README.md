@@ -3,6 +3,8 @@ sangrenel
 
 *"...basically a cloth bag filled with small jagged pieces of scrap iron"*
 
+Note Dec 2016: Sangrenel is awfully out of date and could be a much better tool. It will be revived soon with new features, improvements and much needed refactoring.
+
 ### Installation
 
 NOTE: Sangrenel locally vendors v1.8.0 of Sarama (the Go Kafka client library), which builds properly with Sangrenel - but the functionally with this version has not been extensively tested.
