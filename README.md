@@ -9,9 +9,9 @@ Note Dec 2016: Sangrenel is awfully out of date and could be a much better tool.
 
 NOTE: Sangrenel locally vendors v1.8.0 of Sarama (the Go Kafka client library), which builds properly with Sangrenel - but the functionally with this version has not been extensively tested.
 
-Assuming Go is installed (tested with 1.6) and $GOPATH is set:
+Assuming Go is installed (tested with 1.6, 1.7) and $GOPATH is set:
 
-- `go get github.com/jamiealquiza/sangrenel`
+- `go get -u github.com/jamiealquiza/sangrenel`
 - `go install github.com/jamiealquiza/sangrenel`
 
 Binary will be found at `$GOPATH/bin/sangrenel`
