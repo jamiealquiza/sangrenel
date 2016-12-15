@@ -131,7 +131,6 @@ func clientProducer(c kafka.Client, t *tachymeter.Tachymeter) {
 				times[n-1] = time.Since(start)
 				if n == 10 {
 					incrSent(10)
-					t.AddCount(10)
 					for _, ts := range times {
 						t.AddTime(ts)
 					}
@@ -165,7 +164,6 @@ func clientDummyProducer(t *tachymeter.Tachymeter) {
 		times[n-1] = time.Since(start)
 		if n == 10 {
 			incrSent(10)
-			t.AddCount(10)
 			for _, ts := range times {
 				t.AddTime(ts)
 			}
