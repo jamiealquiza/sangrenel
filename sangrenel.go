@@ -261,7 +261,7 @@ func main() {
 		fmt.Println("Compression: Snappy")
 	}
 
-	t := tachymeter.New(&tachymeter.Config{Size: 1000, Safe: true})
+	t := tachymeter.New(&tachymeter.Config{Size: 300000, Safe: true})
 
 	// Start client workers.
 	for i := 0; i < clients; i++ {
@@ -317,6 +317,9 @@ func main() {
 			// to avoid sampling. Otherwise, just reset it.
 			if int(deltaCnt) > len(t.Times) {
 				newTachy := tachymeter.New(&tachymeter.Config{Size: int(2 * deltaCnt), Safe: true})
+				// This is actually dangerous;
+				// this could swap in a tachy with unlocked
+				// mutexes while the current one has locks held.
 				*t = *newTachy
 			} else {
 				t.Reset()
