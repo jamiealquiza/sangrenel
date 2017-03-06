@@ -22,6 +22,7 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"log"
@@ -50,6 +51,8 @@ var (
 	producers      int
 	noop           bool
 
+	source MessageSource
+
 	// Character selection for random messages.
 	chars = []byte("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890!@#$^&*(){}][:<>.")
 
@@ -58,6 +61,79 @@ var (
 	killClients = make(chan bool, 24)
 	sentCntr    = make(chan int64, 1)
 )
+
+type MessageSource interface {
+	PutMessage(buffer []byte) []byte
+	Clone() MessageSource
+}
+
+type RandomMessageSource struct {
+	generator *rand.Rand
+}
+
+func NewRandomMessageSource() *RandomMessageSource {
+	source := rand.NewSource(time.Now().UnixNano())
+	return &RandomMessageSource{
+		generator: rand.New(source),
+	}
+}
+
+func (source *RandomMessageSource) PutMessage(buffer []byte) []byte {
+	for i := range buffer {
+		buffer[i] = chars[source.generator.Intn(len(chars))]
+	}
+	return buffer
+}
+
+func (source *RandomMessageSource) Clone() MessageSource {
+	return source
+}
+
+type ReplayMessageSource struct {
+	lines [][]byte
+	index int
+}
+
+func NewReplayMessageSource(path string) (*ReplayMessageSource, error) {
+	handle, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("Could not open data file %s for replay: %v", path, err)
+	}
+
+	lines := make([][]byte, 0, 100)
+	scanner := bufio.NewScanner(handle)
+	for scanner.Scan() {
+		lines = append(lines, scanner.Bytes())
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("Error reading from data file %s: %v", path, err)
+	}
+
+	return &ReplayMessageSource{
+		lines: lines,
+		index: 0,
+	}, nil
+}
+
+func (source *ReplayMessageSource) Clone() MessageSource {
+	return &ReplayMessageSource{
+		lines: source.lines,
+		index: source.index,
+	}
+}
+
+func (source *ReplayMessageSource) PutMessage(buffer []byte) []byte {
+	if source.index >= len(source.lines) {
+		source.index = 0
+	}
+	line := source.lines[source.index]
+	buffer = buffer[:len(line)]
+	for i := range line {
+		buffer[i] = line[i]
+	}
+	source.index++
+	return buffer
+}
 
 func init() {
 	flag.StringVar(&topic, "topic", "sangrenel", "Topic to publish to")
@@ -68,6 +144,7 @@ func init() {
 	flag.BoolVar(&noop, "noop", false, "Test message generation performance, do not transmit messages")
 	flag.IntVar(&clients, "clients", 1, "Number of Kafka client workers")
 	flag.IntVar(&producers, "producers", 5, "Number of producer instances per client")
+	dataPath := flag.String("data", "", "File of lines that each producer should send to the broker")
 	brokerString := flag.String("brokers", "localhost:9092", "Comma delimited list of Kafka brokers")
 	flag.Parse()
 
@@ -85,6 +162,19 @@ func init() {
 		os.Exit(1)
 	}
 
+	if len(*dataPath) == 0 {
+		fmt.Printf("Writing random strings of %d bytes.\n", msgSize)
+		source = NewRandomMessageSource()
+	} else {
+		fmt.Printf("Writing data from %s.\n", *dataPath)
+		var err error
+		source, err = NewReplayMessageSource(*dataPath)
+		if err != nil {
+			log.Println(err)
+			os.Exit(1)
+		}
+	}
+
 	sentCntr <- 0
 }
 
@@ -98,8 +188,7 @@ func clientProducer(c kafka.Client, t *tachymeter.Tachymeter) {
 	}
 	defer producer.Close()
 
-	source := rand.NewSource(time.Now().UnixNano())
-	generator := rand.New(source)
+	localSource := source.Clone()
 	msgData := make([]byte, msgSize)
 
 	// Use a local accumulator then periodically update global counter.
@@ -117,7 +206,7 @@ func clientProducer(c kafka.Client, t *tachymeter.Tachymeter) {
 		countStart := fetchSent()
 		var start time.Time
 		for fetchSent()-countStart < msgRate {
-			randMsg(msgData, *generator)
+			msgData := localSource.PutMessage(msgData)
 			msg := &kafka.ProducerMessage{Topic: topic, Value: kafka.ByteEncoder(msgData)}
 
 			start = time.Now()
@@ -147,8 +236,7 @@ func clientProducer(c kafka.Client, t *tachymeter.Tachymeter) {
 // clientDummyProducer is a dummy function that kafkaClient calls if noop is True.
 // It is used in place of starting actual Kafka client connections to test message creation performance.
 func clientDummyProducer(t *tachymeter.Tachymeter) {
-	source := rand.NewSource(time.Now().UnixNano())
-	generator := rand.New(source)
+	localSource := source.Clone()
 	msg := make([]byte, msgSize)
 
 	var n int64
@@ -156,7 +244,7 @@ func clientDummyProducer(t *tachymeter.Tachymeter) {
 
 	for {
 		start := time.Now()
-		randMsg(msg, *generator)
+		msg = localSource.PutMessage(msg)
 
 		// Increment global counter and
 		// tachymeter every 10 messages.
@@ -206,14 +294,6 @@ func kafkaClient(n int, t *tachymeter.Tachymeter) {
 		}
 	}
 	<-killClients
-}
-
-// Returns a random message generated from the chars byte slice.
-// Message length of m bytes as defined by msgSize.
-func randMsg(m []byte, generator rand.Rand) {
-	for i := range m {
-		m[i] = chars[generator.Intn(len(chars))]
-	}
 }
 
 // Global counter functions.
