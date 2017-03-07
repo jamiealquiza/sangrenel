@@ -23,6 +23,8 @@ package main
 
 import (
 	"bufio"
+	"crypto/tls"
+	"crypto/x509"
 	"flag"
 	"fmt"
 	"log"
@@ -50,6 +52,7 @@ var (
 	clients        int
 	producers      int
 	noop           bool
+	tlsconfig      *tls.Config
 
 	source MessageSource
 
@@ -146,6 +149,9 @@ func init() {
 	flag.IntVar(&producers, "producers", 5, "Number of producer instances per client")
 	dataPath := flag.String("data", "", "File of lines that each producer should send to the broker")
 	brokerString := flag.String("brokers", "localhost:9092", "Comma delimited list of Kafka brokers")
+	clientCertPath := flag.String("cert", "", "Path to TLS client certificate in PEM format")
+	clientKeyPath := flag.String("key", "", "Path to TLS client private key in PEM format")
+	caPath := flag.String("ca", "", "Path to CA root certificate in PEM format")
 	flag.Parse()
 
 	brokers = strings.Split(*brokerString, ",")
@@ -162,6 +168,7 @@ func init() {
 		os.Exit(1)
 	}
 
+	// Select the proper message source based on command line options.
 	if len(*dataPath) == 0 {
 		fmt.Printf("Writing random strings of %d bytes.\n", msgSize)
 		source = NewRandomMessageSource()
@@ -172,6 +179,55 @@ func init() {
 		if err != nil {
 			log.Println(err)
 			os.Exit(1)
+		}
+	}
+
+	// Build TLS configuration if command line options are specified.
+	hasCert := len(*clientCertPath) > 0
+	hasKey := len(*clientKeyPath) > 0
+	hasCA := len(*caPath) > 0
+	if (hasCert || hasKey || hasCA) != (hasCert && hasKey && hasCA) {
+		fmt.Printf("Must specify all three of cert, key, and ca, or none.\n")
+		os.Exit(1)
+	} else if hasCert { // Build TLS config
+		cert, err := tls.LoadX509KeyPair(*clientCertPath, *clientKeyPath)
+		if err != nil {
+			fmt.Printf("Failed to load key pair from cert file %s and key file %s: %v\n", *clientCertPath, *clientKeyPath, err)
+			os.Exit(1)
+		}
+
+		h, err := os.Open(*caPath)
+		if err != nil {
+			fmt.Printf("Could not open CA %s: %v\n", *caPath, err)
+			os.Exit(1)
+		}
+		defer h.Close()
+		fi, err := h.Stat()
+		if err != nil {
+			fmt.Printf("Could not stat %s: %v\n", *caPath, err)
+			os.Exit(1)
+		}
+		certBuffer := make([]byte, fi.Size())
+		n, err := h.Read(certBuffer)
+		if err != nil {
+			fmt.Printf("Could not read from %s: %v\n", *caPath, err)
+			os.Exit(1)
+		}
+		if n != int(fi.Size()) {
+			fmt.Printf("Bytes read didn't match file size in %s: expected %d, read %d\n", *caPath, fi.Size(), n)
+			os.Exit(1)
+		}
+
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(certBuffer) {
+			fmt.Printf("No certs found in %s.\n", *caPath)
+			os.Exit(1)
+		}
+
+		tlsconfig = &tls.Config{
+			InsecureSkipVerify: true,
+			RootCAs:            pool,
+			Certificates:       []tls.Certificate{cert},
 		}
 	}
 
@@ -275,6 +331,11 @@ func kafkaClient(n int, t *tachymeter.Tachymeter) {
 		conf.Producer.Flush.MaxMessages = batchSize
 
 		conf.Producer.MaxMessageBytes = msgSize + 50
+
+		if tlsconfig != nil {
+			conf.Net.TLS.Enable = true
+			conf.Net.TLS.Config = tlsconfig
+		}
 
 		client, err := kafka.NewClient(brokers, conf)
 		if err != nil {
