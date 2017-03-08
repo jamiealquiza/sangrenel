@@ -89,7 +89,10 @@ func (source *RandomMessageSource) PutMessage(buffer []byte) []byte {
 }
 
 func (source *RandomMessageSource) Clone() MessageSource {
-	return source
+	s := rand.NewSource(time.Now().UnixNano())
+	return &RandomMessageSource{
+		generator: rand.New(s),
+	}
 }
 
 type ReplayMessageSource struct {
