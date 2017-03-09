@@ -27,6 +27,7 @@ import (
 	"crypto/x509"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"math/rand"
 	"os"
@@ -107,12 +108,16 @@ func NewReplayMessageSource(path string) (*ReplayMessageSource, error) {
 	}
 
 	lines := make([][]byte, 0, 100)
-	scanner := bufio.NewScanner(handle)
-	for scanner.Scan() {
-		lines = append(lines, scanner.Bytes())
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("Error reading from data file %s: %v", path, err)
+	reader := bufio.NewReader(handle)
+	for {
+		line, err := reader.ReadBytes('\n')
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			return nil, fmt.Errorf("Error reading from data file %s: %v", path, err)
+		} else {
+			lines = append(lines, line)
+		}
 	}
 
 	return &ReplayMessageSource{
@@ -124,7 +129,7 @@ func NewReplayMessageSource(path string) (*ReplayMessageSource, error) {
 func (source *ReplayMessageSource) Clone() MessageSource {
 	return &ReplayMessageSource{
 		lines: source.lines,
-		index: source.index,
+		index: 0,
 	}
 }
 
@@ -133,9 +138,12 @@ func (source *ReplayMessageSource) PutMessage(buffer []byte) []byte {
 		source.index = 0
 	}
 	line := source.lines[source.index]
-	buffer = buffer[:len(line)]
-	for i := range line {
-		buffer[i] = line[i]
+	if len(line) < len(buffer) {
+		buffer = buffer[:len(line)]
+	}
+	copy(line[:len(buffer)], buffer)
+	if len(line) > len(buffer) {
+		buffer = append(buffer, line[len(buffer):]...)
 	}
 	source.index++
 	return buffer
@@ -265,7 +273,7 @@ func clientProducer(c kafka.Client, t *tachymeter.Tachymeter) {
 		countStart := fetchSent()
 		var start time.Time
 		for fetchSent()-countStart < msgRate {
-			msgData := localSource.PutMessage(msgData)
+			msgData = localSource.PutMessage(msgData)
 			msg := &kafka.ProducerMessage{Topic: topic, Value: kafka.ByteEncoder(msgData)}
 
 			start = time.Now()
@@ -332,8 +340,7 @@ func kafkaClient(n int, t *tachymeter.Tachymeter) {
 			conf.Producer.Compression = compression
 		}
 		conf.Producer.Flush.MaxMessages = batchSize
-
-		conf.Producer.MaxMessageBytes = msgSize + 50
+		conf.Producer.MaxMessageBytes = 1024 * 1024 * 10
 
 		if tlsconfig != nil {
 			conf.Net.TLS.Enable = true
