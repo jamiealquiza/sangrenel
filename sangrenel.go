@@ -67,32 +67,35 @@ var (
 )
 
 type MessageSource interface {
-	PutMessage(buffer []byte) []byte
+	GetMessage() []byte
 	Clone() MessageSource
 }
 
 type RandomMessageSource struct {
 	generator *rand.Rand
+	buffer    []byte
 }
 
 func NewRandomMessageSource() *RandomMessageSource {
 	source := rand.NewSource(time.Now().UnixNano())
 	return &RandomMessageSource{
 		generator: rand.New(source),
+		buffer:    make([]byte, msgSize),
 	}
 }
 
-func (source *RandomMessageSource) PutMessage(buffer []byte) []byte {
-	for i := range buffer {
-		buffer[i] = chars[source.generator.Intn(len(chars))]
+func (source *RandomMessageSource) GetMessage() []byte {
+	for i := range source.buffer {
+		source.buffer[i] = chars[source.generator.Intn(len(chars))]
 	}
-	return buffer
+	return source.buffer
 }
 
 func (source *RandomMessageSource) Clone() MessageSource {
 	s := rand.NewSource(time.Now().UnixNano())
 	return &RandomMessageSource{
 		generator: rand.New(s),
+		buffer:    make([]byte, msgSize),
 	}
 }
 
@@ -133,18 +136,13 @@ func (source *ReplayMessageSource) Clone() MessageSource {
 	}
 }
 
-func (source *ReplayMessageSource) PutMessage(buffer []byte) []byte {
+func (source *ReplayMessageSource) GetMessage() []byte {
 	if source.index >= len(source.lines) {
 		source.index = 0
 	}
 	line := source.lines[source.index]
-	if len(line) < len(buffer) {
-		buffer = buffer[:len(line)]
-	}
-	copy(line[:len(buffer)], buffer)
-	if len(line) > len(buffer) {
-		buffer = append(buffer, line[len(buffer):]...)
-	}
+	buffer := make([]byte, len(line))
+	copy(buffer, line)
 	source.index++
 	return buffer
 }
@@ -256,7 +254,6 @@ func clientProducer(c kafka.Client, t *tachymeter.Tachymeter) {
 	defer producer.Close()
 
 	localSource := source.Clone()
-	msgData := make([]byte, msgSize)
 
 	// Use a local accumulator then periodically update global counter.
 	// Global counter can become a bottleneck with too many threads.
@@ -273,7 +270,7 @@ func clientProducer(c kafka.Client, t *tachymeter.Tachymeter) {
 		countStart := fetchSent()
 		var start time.Time
 		for fetchSent()-countStart < msgRate {
-			msgData = localSource.PutMessage(msgData)
+			msgData := localSource.GetMessage()
 			msg := &kafka.ProducerMessage{Topic: topic, Value: kafka.ByteEncoder(msgData)}
 
 			start = time.Now()
@@ -304,14 +301,13 @@ func clientProducer(c kafka.Client, t *tachymeter.Tachymeter) {
 // It is used in place of starting actual Kafka client connections to test message creation performance.
 func clientDummyProducer(t *tachymeter.Tachymeter) {
 	localSource := source.Clone()
-	msg := make([]byte, msgSize)
 
 	var n int64
 	var times [10]time.Duration
 
 	for {
 		start := time.Now()
-		msg = localSource.PutMessage(msg)
+		localSource.GetMessage()
 
 		// Increment global counter and
 		// tachymeter every 10 messages.
