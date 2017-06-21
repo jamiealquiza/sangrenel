@@ -55,9 +55,7 @@ var (
 	chars = []byte("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890!@#$^&*(){}][:<>.")
 
 	// Counters / misc.
-	sentCnt     uint64
-	signals     = make(chan os.Signal)
-	killClients = make(chan bool, 24)
+	sentCnt uint64
 )
 
 func init() {
@@ -290,7 +288,9 @@ func kafkaClient(n int, t *tachymeter.Tachymeter) {
 			go clientDummyProducer(t)
 		}
 	}
-	<-killClients
+
+	wait := make(chan bool)
+	<-wait
 }
 
 // Returns a random message generated from the chars byte slice.
