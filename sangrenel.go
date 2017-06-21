@@ -30,6 +30,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -41,7 +42,7 @@ type config struct {
 	brokers            []string
 	topic              string
 	msgSize            int
-	msgRate            int64
+	msgRate            uint64
 	batchSize          int
 	compression        sarama.CompressionCodec
 	clients            int
@@ -56,15 +57,15 @@ var (
 	chars = []byte("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890!@#$^&*(){}][:<>.")
 
 	// Counters / misc.
+	sentCnt     uint64
 	signals     = make(chan os.Signal)
 	killClients = make(chan bool, 24)
-	sentCntr    = make(chan int64, 1)
 )
 
 func init() {
 	flag.StringVar(&Config.topic, "topic", "sangrenel", "Kafka topic to produce to")
 	flag.IntVar(&Config.msgSize, "size", 300, "Message size in bytes")
-	flag.Int64Var(&Config.msgRate, "rate", 100000000, "Apply a global message rate limit")
+	flag.Uint64Var(&Config.msgRate, "rate", 100000000, "Apply a global message rate limit")
 	flag.IntVar(&Config.batchSize, "batch", 1, "Messages per batch")
 	compression := flag.String("compression", "none", "Message compression: none, gzip, snappy")
 	flag.BoolVar(&Config.noop, "noop", false, "Test message generation performance, do not transmit messages")
@@ -86,8 +87,6 @@ func init() {
 		fmt.Printf("Invalid compression option: %s\n", *compression)
 		os.Exit(1)
 	}
-
-	sentCntr <- 0
 }
 
 func main() {
@@ -122,7 +121,7 @@ func main() {
 	// Start Sangrenel periodic info output.
 	tick := time.Tick(5 * time.Second)
 
-	var currCnt, lastCnt int64
+	var currCnt, lastCnt uint64
 	start := time.Now()
 	for {
 		select {
@@ -135,7 +134,7 @@ func main() {
 
 			// Get actual current sent count, then delta from last count.
 			// Delta is divided by update interval (5s) for per-second rate over a window.
-			currCnt = fetchSent()
+			currCnt = atomic.LoadUint64(&sentCnt)
 			deltaCnt := currCnt - lastCnt
 
 			stats := t.Calc()
@@ -218,9 +217,9 @@ func clientProducer(c sarama.Client, t *tachymeter.Tachymeter) {
 		// If the configured rate is met, the worker will sleep
 		// for the remainder of the 1 second window.
 		rateEnd := time.Now().Add(time.Second)
-		countStart := fetchSent()
+		countStart := atomic.LoadUint64(&sentCnt)
 		var start time.Time
-		for fetchSent()-countStart < Config.msgRate {
+		for atomic.LoadUint64(&sentCnt)-countStart < Config.msgRate {
 			randMsg(msgData, *generator)
 			msg := &sarama.ProducerMessage{Topic: Config.topic, Value: sarama.ByteEncoder(msgData)}
 
@@ -234,7 +233,7 @@ func clientProducer(c sarama.Client, t *tachymeter.Tachymeter) {
 				n++
 				times[n-1] = time.Since(start)
 				if n == 10 {
-					incrSent(10)
+					atomic.AddUint64(&sentCnt, 10)
 					for _, ts := range times {
 						t.AddTime(ts)
 					}
@@ -267,7 +266,7 @@ func clientDummyProducer(t *tachymeter.Tachymeter) {
 		n++
 		times[n-1] = time.Since(start)
 		if n == 10 {
-			incrSent(10)
+			atomic.AddUint64(&sentCnt, 10)
 			for _, ts := range times {
 				t.AddTime(ts)
 			}
@@ -319,19 +318,8 @@ func randMsg(m []byte, generator rand.Rand) {
 	}
 }
 
-// Global counter functions.
-func incrSent(n int64) {
-	i := <-sentCntr
-	sentCntr <- i + n
-}
-func fetchSent() int64 {
-	i := <-sentCntr
-	sentCntr <- i
-	return i
-}
-
 // Calculates aggregate raw message output in human / network units.
-func calcOutput(n int64) (float64, string) {
+func calcOutput(n uint64) (float64, string) {
 	m := (float64(n) / 5) * float64(Config.msgSize)
 	var o string
 	switch {
