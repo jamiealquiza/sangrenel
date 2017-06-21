@@ -144,7 +144,7 @@ func main() {
 			// Update the metrics map for the Graphite writer.
 			metrics["rate"] = stats.Rate.Second
 			metrics["output"] = outputBytes
-			metrics["5p"] = (float64(stats.Time.Long5p.Nanoseconds()) / 1000) / 1000
+			metrics["p99"] = (float64(stats.Time.P99.Nanoseconds()) / 1000) / 1000
 			// Add ts for Graphite.
 			now := time.Now()
 			ts := float64(now.Unix())
@@ -155,11 +155,11 @@ func main() {
 			}
 
 			fmt.Println()
-			log.Printf("Generating %s @ %.0f messages/sec | topic: %s | %.2fms top 5%% latency\n",
+			log.Printf("Generating %s @ %.0f messages/sec | topic: %s | %.2fms p99 latency\n",
 				outputString,
 				metrics["rate"],
 				Config.topic,
-				metrics["5p"])
+				metrics["p99"])
 
 			stats.Dump()
 
