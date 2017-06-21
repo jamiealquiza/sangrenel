@@ -27,11 +27,9 @@ import (
 	"log"
 	"math/rand"
 	"os"
-	"os/signal"
 	"strconv"
 	"strings"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/jamiealquiza/tachymeter"
@@ -90,9 +88,6 @@ func init() {
 }
 
 func main() {
-	// Listens for signals.
-	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
-
 	if graphiteIp != "" {
 		go graphiteWriter()
 	}
@@ -124,70 +119,58 @@ func main() {
 	var currCnt, lastCnt uint64
 	start := time.Now()
 	for {
-		select {
-		case <-tick:
-			// Set tachymeter wall time.
-			t.SetWallTime(time.Since(start))
+		<-tick
+		// Set tachymeter wall time.
+		t.SetWallTime(time.Since(start))
 
-			// Set last and current to last read sent count.
-			lastCnt = currCnt
+		// Set last and current to last read sent count.
+		lastCnt = currCnt
 
-			// Get actual current sent count, then delta from last count.
-			// Delta is divided by update interval (5s) for per-second rate over a window.
-			currCnt = atomic.LoadUint64(&sentCnt)
-			deltaCnt := currCnt - lastCnt
+		// Get actual current sent count, then delta from last count.
+		// Delta is divided by update interval (5s) for per-second rate over a window.
+		currCnt = atomic.LoadUint64(&sentCnt)
+		deltaCnt := currCnt - lastCnt
 
-			stats := t.Calc()
+		stats := t.Calc()
 
-			outputBytes, outputString := calcOutput(deltaCnt)
+		outputBytes, outputString := calcOutput(deltaCnt)
 
-			// Update the metrics map for the Graphite writer.
-			metrics["rate"] = stats.Rate.Second
-			metrics["output"] = outputBytes
-			metrics["p99"] = (float64(stats.Time.P99.Nanoseconds()) / 1000) / 1000
-			// Add ts for Graphite.
-			now := time.Now()
-			ts := float64(now.Unix())
-			metrics["timestamp"] = ts
+		// Update the metrics map for the Graphite writer.
+		metrics["rate"] = stats.Rate.Second
+		metrics["output"] = outputBytes
+		metrics["p99"] = (float64(stats.Time.P99.Nanoseconds()) / 1000) / 1000
+		// Add ts for Graphite.
+		now := time.Now()
+		ts := float64(now.Unix())
+		metrics["timestamp"] = ts
 
-			if graphiteIp != "" {
-				metricsOutgoing <- metrics
-			}
-
-			fmt.Println()
-			log.Printf("Generating %s @ %.0f messages/sec | topic: %s | %.2fms p99 latency\n",
-				outputString,
-				metrics["rate"],
-				Config.topic,
-				metrics["p99"])
-
-			stats.Dump()
-
-			// Check if the tacymeter size needs to be increased
-			// to avoid sampling. Otherwise, just reset it.
-			if int(deltaCnt) > len(t.Times) {
-				newTachy := tachymeter.New(&tachymeter.Config{Size: int(2 * deltaCnt), Safe: true})
-				// This is actually dangerous;
-				// this could swap in a tachy with unlocked
-				// mutexes while the current one has locks held.
-				*t = *newTachy
-			} else {
-				t.Reset()
-			}
-
-			// Reset interval time.
-			start = time.Now()
-
-		// Waits for signals. Currently just brutally kills Sangrenel.
-		case <-signals:
-			fmt.Println("Killing Connections")
-			for i := 0; i < Config.workers; i++ {
-				killClients <- true
-			}
-			close(killClients)
-			time.Sleep(2 * time.Second)
-			os.Exit(0)
+		if graphiteIp != "" {
+			metricsOutgoing <- metrics
 		}
+
+		fmt.Println()
+		log.Printf("Generating %s @ %.0f messages/sec | topic: %s | %.2fms p99 latency\n",
+			outputString,
+			metrics["rate"],
+			Config.topic,
+			metrics["p99"])
+
+		stats.Dump()
+
+		// Check if the tacymeter size needs to be increased
+		// to avoid sampling. Otherwise, just reset it.
+		if int(deltaCnt) > len(t.Times) {
+			newTachy := tachymeter.New(&tachymeter.Config{Size: int(2 * deltaCnt), Safe: true})
+			// This is actually dangerous;
+			// this could swap in a tachy with unlocked
+			// mutexes while the current one has locks held.
+			*t = *newTachy
+		} else {
+			t.Reset()
+		}
+
+		// Reset interval time.
+		start = time.Now()
 	}
 }
 
