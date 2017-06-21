@@ -55,7 +55,7 @@ The `-topic` flag specifies which topic is used, allowing configs such as pariti
 
 Two important factors to note:
 - Sangrenel uses Sarama's [SyncProducer](https://godoc.org/github.com/Shopify/sarama#SyncProducer), meaning messages are written synchronously
-- At a given message size, run Sangrenel in `-noop` mode to ensure the desired number of messages can be generated (even if a `-produce-rate` is specified)
+- At a given message size, Sangrenel should be tested in `-noop` mode to ensure the desired number of messages can be generated (even if a `-produce-rate` is specified)
 
 Once running, Sangrenel generates and writes messages as fast as possible (or to the configured `-produce-rate`). Every 5 seconds, message throughput, rates, latency and other metrics (via [tachymeter](https://github.com/jamiealquiza/tachymeter)) are printed to console.
 
