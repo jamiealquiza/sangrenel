@@ -1,102 +1,131 @@
 sangrenel
 =========
 
+[Update] Sangrenel is currently being updated.
+
 *"...basically a cloth bag filled with small jagged pieces of scrap iron"*
 
-Note Dec 2016: Sangrenel is awfully out of date and could be a much better tool. It will be revived soon with new features, improvements and much needed refactoring.
+Sangrenel is Kafka cluster load testing tool. Sangrenel was originally created for some baseline performance testing, exemplified in my *Load testing Apache Kafka on AWS* [blog post](https://grey-boundary.io/load-testing-apache-kafka-on-aws/).
+
+While using this tool, keep in mind that benchmarking is always an examination of total systems performance, and that the testing software itself is part of the system (meaning you're not just testing Kafka, but Kafka+Sangrenel).
 
 ### Installation
 
-NOTE: Sangrenel locally vendors v1.8.0 of Sarama (the Go Kafka client library), which builds properly with Sangrenel - but the functionally with this version has not been extensively tested.
-
-Assuming Go is installed (tested with 1.6, 1.7) and $GOPATH is set:
+Assuming Go is installed (tested with 1.7+) and $GOPATH is set:
 
 - `go get -u github.com/jamiealquiza/sangrenel`
 - `go install github.com/jamiealquiza/sangrenel`
 
 Binary will be found at `$GOPATH/bin/sangrenel`
 
-### Overview
+### Usage
 
-Smashes Kafka queues with lots of messages and reports performance metrics (to console and optionally, Graphite). Used in my Kafka on AWS load testing [blog post](https://grey-boundary.io/load-testing-apache-kafka-on-aws/). While using this tool, keep in mind that any benchmarking scenario is an examination of total systems performance and that the testing software itself is part of the system (meaning you're not just testing Kafka, but Kafka+Sangrenel).
-
-Usage overview:
-
+Usage output:
 <pre>
-% ./sangrenel -h
-Usage of ./sangrenel:
-  -batch=0: Max messages per batch. Defaults to unlimited (0).
-  -brokers="localhost:9092": Comma delimited list of Kafka brokers
-  -clients=1: Number of Kafka client workers
-  -compression="none": Message compression: none, gzip, snappy
-  -graphite-ip="": Destination Graphite IP address
-  -graphite-metrics-prefix="random": Top-level Graphite namespace prefix (defaults to hostname)
-  -graphite-port="": Destination Graphite plaintext port
-  -noop=false: Test message generation performance, do not transmit messages
-  -producers=5: Number of producer instances per client
-  -rate=100000000: Apply a global message rate limit
-  -size=300: Message size in bytes
-  -topic="sangrenel": Topic to publish to
+Usage of sangrenel:
+  -brokers string
+        Comma delimited list of Kafka brokers (default "localhost:9092")
+  -compression string
+        Message compression: none, gzip, snappy (default "none")
+  -graphite-ip string
+        Destination Graphite IP address
+  -graphite-metrics-prefix string
+        Top-level Graphite namespace prefix (defaults to hostname) (default "mbp.local")
+  -graphite-port string
+        Destination Graphite plaintext port
+  -message-batch-size int
+        Messages per batch (default 1)
+  -message-size int
+        Message size (bytes) (default 300)
+  -noop
+        Test message generation performance (does not connect to Kafka)
+  -produce-rate uint
+        Global write rate limit (messages/sec) (default 100000000)
+  -topic string
+        Kafka topic to produce to (default "sangrenel")
+  -workers int
+        Number of workers (default 1)
+  -writers-per-worker int
+        Number of writer (Kafka producer) goroutines per worker (default 5)
 </pre>
 
-The <code>-clients</code> directive initializes n Kafka clients. Each client manages 5 Kafka producer instances (overridden with <code>-producers</code>) in goroutines that synchronously publish random messages of <code>-size</code> bytes to the referenced Kafka cluster/topic as fast as possible. Kafka client worker counts need to be scaled up in order to produce more throughput, as each client connection maxes out throughput with roughly 5 producers instances. Configuring these variables allows you to roughly model arbitary topologies of connection counts and workers per connection. The <code>-rate</code> directive allows you to place a global cap on the total message rate for all workers combined.
+Sangrenel uses the Kafka client library, [Sarama](https://github.com/Shopify/sarama). Sangrenel starts one or more workers, each of which maintain a unique Kafka client connection to the target cluster. Each worker has a number of writers which generate and send message data to Kafka, sharing the parent worker client connection. The number of workers is configurable via the `-workers` flag, the number of writers per worker via the `-writers-per-worker`. This is done for scaling purposes; while a single Sarama client can be used for multiple writers (which live in separate goroutines), performance begings to flatline at a certain point. It's best to leave the writers-per-worker at the default 5 and scaling the worker count as needed, but the option is exposed for more control. Left as a technical exercise for the user, there's a different between 2 workers with 5 writers each and 1 worker with 10 writers.
 
-Note: Sangrenel should be tested with <code>--noop</code> (messages are only generated but not transmitted to the brokers) in order to determine the maximum message rate that the configured message size and worker setting can generate. Otherwise, you may see a throughput rate that's computationally bound versus the actual limitation of the Kafka brokers being testing.
+The `-topic` flag specifies which topic is used, allowing configs such as parition count and replication factor to be prepared ahead of time for performance comparisons (by switching which topic Sangrenel is using). The `-message-batch-size`, `-message-size` and `-produce-rate` flags can be used to dictate message size, number of messages to batch per write, and the total Sangrenel write rate. 
 
-If a topic is referenced that does not yet exist, Sangrenel will create one with a default of 2 partitions / 1 replica (or as defined in your Kafka server configuration). Alternative parition/replica topologies should be created manually prior to running Sangrenel.
+Two important factors to note:
+- Sangrenel uses Sarama's [SyncProducer](https://godoc.org/github.com/Shopify/sarama#SyncProducer), meaning messages are written synchronously
+- At a given message size, run Sangrenel in `-noop` mode to ensure the desired number of messages can be generated (even if a `-produce-rate` is specified)
 
-Sangrenel outputs metrics based on the previous 5 seconds of operation: the aggregate amount of data being produced, message transaction rate (or generated rate if using <code>--noop</code>) and top 10% worst latency average (time from message sent to receiving an ack from the broker).
+Once running, Sangrenel generates and writes messages as fast as possible (or to the configured `-produce-rate`). Every 5 seconds, message throughput rates, latency and other metrics (via [tachymeter](https://github.com/jamiealquiza/tachymeter)) are printed to console.
 
-If optionally defined, Graphite can be used as a secondary output location. This allows you to graph performance results in addition to overlaying Sangrenel metrics against Kafka cluster metrics that you may already be collecting in Graphite.
+If optionally defined, some metric data can be written to Graphite. More/better metric output options will be added.
+
+### Example
 
 <pre>
-% ./sangrenel -brokers="192.168.100.204:9092" -size=250 -topic=load -clients=3 
+% sangrenel -brokers="localhost:9092" -message-size=250 -topic=test -workers=3
 
-::: Sangrenel :::
-
-Starting 3 client workers, 5 producers per worker
-Message size 300 bytes, 0 message limit per batch
+Starting 3 client workers, 5 writers per worker
+Message size 250 bytes, 1 message limit per batch
 Compression: none
-2016/10/10 17:27:16 client_2 connected
-2016/10/10 17:27:16 client_1 connected
-2016/10/10 17:27:16 client_3 connected
+2017/06/21 17:32:06 worker_2 connected
+2017/06/21 17:32:06 worker_3 connected
+2017/06/21 17:32:06 worker_1 connected
 
-2016/10/10 17:27:21 Generating 84Mb/sec @ 36590 messages/sec | topic: sangrenel | 0.66ms top 10% latency
-182950 samples of 182950 events
-Total:			1m12.664330146s
-Avg.:			397.181µs
-Median: 		381.957µs
-95%ile:			490.055µs
-Longest 5%:		656.682µs
-Shortest 5%:	319.556µs
-Max:			24.062776ms
-Min:			130.88µs
-Rate/sec.:		36589.96
+2017/06/21 17:32:11 Generating 50Mb/sec @ 26446 messages/sec | topic: test | 0.84ms p99 latency
+132279 samples of 132279 events
+Cumulative:     1m13.628081218s
+HMean:          546.495µs
+Avg.:           556.612µs
+p50:            541.849µs
+p75:            582.889µs
+p95:            675.962µs
+p99:            838.907µs
+p999:           1.155118ms
+Long 5%:        808.479µs
+Short 5%:       445.683µs
+Max:            7.052061ms
+Min:            173.118µs
+Range:          6.878943ms
+Rate/sec.:      26446.33
 
-2016/10/10 17:27:26 Generating 82Mb/sec @ 35969 messages/sec | topic: sangrenel | 0.64ms top 10% latency
-178730 samples of 178730 events
-Total:			1m12.351815251s
-Avg.:			404.81µs
-Median: 		388.343µs
-95%ile:			530.174µs
-Longest 5%:		642.02µs
-Shortest 5%:	312.688µs
-Max:			3.790078ms
-Min:			93.938µs
-Rate/sec.:		35968.50
+2017/06/21 17:32:16 Generating 51Mb/sec @ 26494 messages/sec | topic: test | 0.84ms p99 latency
+131189 samples of 131189 events
+Cumulative:     1m12.974667212s
+HMean:          546.536µs
+Avg.:           556.255µs
+p50:            539.445µs
+p75:            583.587µs
+p95:            690.266µs
+p99:            844.876µs
+p999:           1.132036ms
+Long 5%:        800.887µs
+Short 5%:       448.191µs
+Max:            3.887683ms
+Min:            194.041µs
+Range:          3.693642ms
+Rate/sec.:      26493.92
 
-2016/10/10 17:27:31 Generating 79Mb/sec @ 34809 messages/sec | topic: sangrenel | 0.74ms top 10% latency
-172750 samples of 172750 events
-Total:			1m12.315903042s
-Avg.:			418.615µs
-Median: 		394.741µs
-95%ile:			574.729µs
-Longest 5%:		740.951µs
-Shortest 5%:	316.336µs
-Max:			4.230673ms
-Min:			118.54µs
-Rate/sec.:		34809.11
+2017/06/21 17:32:21 Generating 51Mb/sec @ 26632 messages/sec | topic: test | 0.82ms p99 latency
+131973 samples of 131973 events
+Cumulative:     1m12.986170902s
+HMean:          544.872µs
+Avg.:           553.038µs
+p50:            541.944µs
+p75:            578.615µs
+p95:            653.687µs
+p99:            818.307µs
+p999:           1.134189ms
+Long 5%:        770.477µs
+Short 5%:       451.758µs
+Max:            3.928126ms
+Min:            210.161µs
+Range:          3.717965ms
+Rate/sec.:      26631.91
 </pre>
+
+### Misc.
 
 Messages/sec. vs latency output, Graphite output:
 
@@ -106,8 +135,7 @@ MB/s. vs latency (Sangrenel writes byte values; this can also be viewed as Mb an
 
 ![ScreenShot](http://us-east.manta.joyent.com/jalquiza/public/github/sangrenel-graphite1.png)
 
-### Performance
 
-Sangrenel obliterating all cores on an EC2 c4.8xlarge instance in <code>noop</code> mode, generating over 6.4Gb/s of random message data:
+Sangrenel in `noop` mode generating over 6.4Gb/s of random message data on a c4.8xlarge:
 
 ![ScreenShot](http://us-east.manta.joyent.com/jalquiza/public/github/sangrenel-c4.png)

@@ -27,72 +27,193 @@ import (
 	"log"
 	"math/rand"
 	"os"
-	"os/signal"
 	"strconv"
 	"strings"
-	"syscall"
+	"sync/atomic"
 	"time"
 
-	kafka "github.com/Shopify/sarama"
 	"github.com/jamiealquiza/tachymeter"
+	"gopkg.in/Shopify/sarama.v1"
 )
 
+type config struct {
+	brokers          []string
+	topic            string
+	msgSize          int
+	msgRate          uint64
+	batchSize        int
+	compression      sarama.CompressionCodec
+	workers          int
+	writersPerWorker int
+	noop             bool
+}
+
 var (
-	// Configs.
-	brokers        []string
-	topic          string
-	msgSize        int
-	msgRate        int64
-	batchSize      int
-	compressionOpt string
-	compression    kafka.CompressionCodec
-	clients        int
-	producers      int
-	noop           bool
+	Config = &config{}
 
 	// Character selection for random messages.
 	chars = []byte("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890!@#$^&*(){}][:<>.")
 
 	// Counters / misc.
-	signals     = make(chan os.Signal)
-	killClients = make(chan bool, 24)
-	sentCntr    = make(chan int64, 1)
+	sentCnt uint64
 )
 
 func init() {
-	flag.StringVar(&topic, "topic", "sangrenel", "Topic to publish to")
-	flag.IntVar(&msgSize, "size", 300, "Message size in bytes")
-	flag.Int64Var(&msgRate, "rate", 100000000, "Apply a global message rate limit")
-	flag.IntVar(&batchSize, "batch", 0, "Max messages per batch. Defaults to unlimited (0).")
-	flag.StringVar(&compressionOpt, "compression", "none", "Message compression: none, gzip, snappy")
-	flag.BoolVar(&noop, "noop", false, "Test message generation performance, do not transmit messages")
-	flag.IntVar(&clients, "clients", 1, "Number of Kafka client workers")
-	flag.IntVar(&producers, "producers", 5, "Number of producer instances per client")
+	flag.StringVar(&Config.topic, "topic", "sangrenel", "Kafka topic to produce to")
+	flag.IntVar(&Config.msgSize, "message-size", 300, "Message size (bytes)")
+	flag.Uint64Var(&Config.msgRate, "produce-rate", 100000000, "Global write rate limit (messages/sec)")
+	flag.IntVar(&Config.batchSize, "message-batch-size", 1, "Messages per batch")
+	compression := flag.String("compression", "none", "Message compression: none, gzip, snappy")
+	flag.BoolVar(&Config.noop, "noop", false, "Test message generation performance (does not connect to Kafka)")
+	flag.IntVar(&Config.workers, "workers", 1, "Number of workers")
+	flag.IntVar(&Config.writersPerWorker, "writers-per-worker", 5, "Number of writer (Kafka producer) goroutines per worker")
 	brokerString := flag.String("brokers", "localhost:9092", "Comma delimited list of Kafka brokers")
 	flag.Parse()
 
-	brokers = strings.Split(*brokerString, ",")
+	Config.brokers = strings.Split(*brokerString, ",")
 
-	switch compressionOpt {
+	switch *compression {
 	case "gzip":
-		compression = kafka.CompressionGZIP
+		Config.compression = sarama.CompressionGZIP
 	case "snappy":
-		compression = kafka.CompressionSnappy
+		Config.compression = sarama.CompressionSnappy
 	case "none":
-		compression = kafka.CompressionNone
+		Config.compression = sarama.CompressionNone
 	default:
-		fmt.Printf("Invalid compression option: %s\n", compressionOpt)
+		fmt.Printf("Invalid compression option: %s\n", *compression)
 		os.Exit(1)
 	}
-
-	sentCntr <- 0
 }
 
-// clientProducer generates random messages and writes to Kafka.
-// Workers track and limit message rates using incrSent() and fetchSent().
-// Default 5 instances of clientProducer are created under each Kafka client.
-func clientProducer(c kafka.Client, t *tachymeter.Tachymeter) {
-	producer, err := kafka.NewSyncProducerFromClient(c)
+func main() {
+	if graphiteIp != "" {
+		go graphiteWriter()
+	}
+
+	// Print Sangrenel startup info.
+	fmt.Printf("\nStarting %d client workers, %d writers per worker\n", Config.workers, Config.writersPerWorker)
+	fmt.Printf("Message size %d bytes, %d message limit per batch\n", Config.msgSize, Config.batchSize)
+
+	switch Config.compression {
+	case sarama.CompressionNone:
+		fmt.Println("Compression: none")
+	case sarama.CompressionGZIP:
+		fmt.Println("Compression: GZIP")
+	case sarama.CompressionSnappy:
+		fmt.Println("Compression: Snappy")
+	}
+
+	t := tachymeter.New(&tachymeter.Config{Size: 300000, Safe: true})
+
+	// Start client workers.
+	for i := 0; i < Config.workers; i++ {
+		go worker(i+1, t)
+	}
+
+	var currCnt, lastCnt uint64
+	interval := 5*time.Second
+	ticker := time.Tick(interval)
+	start := time.Now()
+
+	for {
+		<-ticker
+
+		// Set tachymeter wall time.
+		t.SetWallTime(time.Since(start))
+
+		// Get the sent count from the last interval, then the delta
+		// (sentSinceLastInterval) between the current and last interval.
+		lastCnt = currCnt
+		currCnt = atomic.LoadUint64(&sentCnt)
+		sentSinceLastInterval := currCnt - lastCnt
+
+		outputBytes, outputString := calcOutput(time.Since(start).Seconds(), sentSinceLastInterval)
+
+		// Summarize tachymeter data.
+		stats := t.Calc()
+
+		// Update the metrics map for the Graphite writer.
+		metrics["rate"] = stats.Rate.Second
+		metrics["output"] = outputBytes
+		metrics["p99"] = (float64(stats.Time.P99.Nanoseconds()) / 1000) / 1000
+		metrics["timestamp"] = float64(time.Now().Unix())
+		// Ship metrics if configured.
+		if graphiteIp != "" {
+			metricsOutgoing <- metrics
+		}
+
+		// Write output stats.
+		fmt.Println()
+		log.Printf("Generating %s @ %.0f messages/sec | topic: %s | %.2fms p99 latency\n",
+			outputString,
+			metrics["rate"],
+			Config.topic,
+			metrics["p99"])
+
+		stats.Dump()
+
+		// Check if the tacymeter size needs to be increased
+		// to avoid sampling. Otherwise, just reset it.
+		if int(sentSinceLastInterval) > len(t.Times) {
+			newTachy := tachymeter.New(&tachymeter.Config{Size: int(2 * sentSinceLastInterval), Safe: true})
+			// This is actually dangerous;
+			// this could swap in a tachy with unlocked
+			// mutexes while the current one has locks held.
+			*t = *newTachy
+		} else {
+			t.Reset()
+		}
+
+		// Reset interval time.
+		start = time.Now()
+	}
+}
+
+// worker is a high level producer unit and holds a single
+// Kafka client. The worker's Kafka client is shared by n (Config.writersPerWorker)
+// writer instances that perform the message generation and writing.
+func worker(n int, t *tachymeter.Tachymeter) {
+	switch Config.noop {
+	case false:
+		cId := "worker_" + strconv.Itoa(n)
+
+		conf := sarama.NewConfig()
+		conf.Producer.Compression = Config.compression
+		conf.Producer.Return.Successes = true
+		conf.Producer.Flush.MaxMessages = Config.batchSize
+		conf.Producer.MaxMessageBytes = Config.msgSize + 50
+
+		client, err := sarama.NewClient(Config.brokers, conf)
+		if err != nil {
+			log.Println(err)
+			os.Exit(1)
+		} else {
+			log.Printf("%s connected\n", cId)
+		}
+
+		for i := 0; i < Config.writersPerWorker; i++ {
+			go writer(client, t)
+		}
+	// If noop, we're not creating connections at all.
+	// Just generate messages and burn CPU.
+	default:
+		for i := 0; i < Config.writersPerWorker; i++ {
+			go dummyWriter(t)
+		}
+	}
+
+	wait := make(chan bool)
+	<-wait
+}
+
+// writer generates random messages and write to Kafka.
+// Each wrtier belongs to a parent worker. Writers
+// throttle writes according to a global rate limiter
+// and report write throughput statistics up through
+// a shared tachymeter.
+func writer(c sarama.Client, t *tachymeter.Tachymeter) {
+	// Init the producer.
+	producer, err := sarama.NewSyncProducerFromClient(c)
 	if err != nil {
 		log.Println(err.Error())
 	}
@@ -100,136 +221,80 @@ func clientProducer(c kafka.Client, t *tachymeter.Tachymeter) {
 
 	source := rand.NewSource(time.Now().UnixNano())
 	generator := rand.New(source)
-	msgData := make([]byte, msgSize)
+	msgData := make([]byte, Config.msgSize)
 
-	// Use a local accumulator then periodically update global counter.
-	// Global counter can become a bottleneck with too many threads.
-	// tick := time.Tick(2 * time.Millisecond)
-	var n int64
-	var times [10]time.Duration
+	// Sent is a local accumulator used to periodically update the global counter.
+	// The global counter can become a bottleneck with too many threads so the
+	// update is done after every 10 messages sent.
+	var sent uint64
 
 	for {
-		// Message rate limit works by having all clientProducer loops incrementing
+		// Message rate limiting works by having all writer loops incrementing
 		// a global counter and tracking the aggregate per-second progress.
 		// If the configured rate is met, the worker will sleep
 		// for the remainder of the 1 second window.
 		rateEnd := time.Now().Add(time.Second)
-		countStart := fetchSent()
+		countStart := atomic.LoadUint64(&sentCnt)
 		var start time.Time
-		for fetchSent()-countStart < msgRate {
+		for atomic.LoadUint64(&sentCnt)-countStart < Config.msgRate {
 			randMsg(msgData, *generator)
-			msg := &kafka.ProducerMessage{Topic: topic, Value: kafka.ByteEncoder(msgData)}
+			msg := &sarama.ProducerMessage{Topic: Config.topic, Value: sarama.ByteEncoder(msgData)}
 
 			start = time.Now()
 			_, _, err = producer.SendMessage(msg)
 			if err != nil {
 				log.Println(err)
 			} else {
-				// Increment global counter and
-				// tachymeter every 10 messages.
-				n++
-				times[n-1] = time.Since(start)
-				if n == 10 {
-					incrSent(10)
-					for _, ts := range times {
-						t.AddTime(ts)
-					}
-					n = 0
+				t.AddTime(time.Since(start))
+				sent++
+
+				if sent == 10 {
+					atomic.AddUint64(&sentCnt, sent)
+					sent = 0
 				}
 			}
 		}
 		// If the global per-second rate limit was met,
-		// the inner loop breaks and the outer loop sleeps for the second remainder.
+		// the inner loop breaks and the outer loop sleeps for the interval remainder.
 		time.Sleep(rateEnd.Sub(time.Now()) + time.Since(start))
 	}
 }
 
-// clientDummyProducer is a dummy function that kafkaClient calls if noop is True.
-// It is used in place of starting actual Kafka client connections to test message creation performance.
-func clientDummyProducer(t *tachymeter.Tachymeter) {
+// dummyWriter is initialized by the worker(s) if Config.noop is True.
+// dummyWriter performs the message generation step of the normal writer,
+// but doesn't connect to / attempt to send anything to Kafka. This is used
+// purely for testing message generation performance.
+func dummyWriter(t *tachymeter.Tachymeter) {
 	source := rand.NewSource(time.Now().UnixNano())
 	generator := rand.New(source)
-	msg := make([]byte, msgSize)
+	msg := make([]byte, Config.msgSize)
 
-	var n int64
-	var times [10]time.Duration
+	var sent int64
 
 	for {
-		start := time.Now()
 		randMsg(msg, *generator)
 
-		// Increment global counter and
-		// tachymeter every 10 messages.
-		n++
-		times[n-1] = time.Since(start)
-		if n == 10 {
-			incrSent(10)
-			for _, ts := range times {
-				t.AddTime(ts)
-			}
-			n = 0
+		t.AddTime(time.Duration(0))
+		sent++
+		if sent == 10 {
+			atomic.AddUint64(&sentCnt, 10)
+			sent = 0
 		}
 	}
 }
 
-// kafkaClient initializes a connection to a Kafka cluster and
-// initializes one or more clientProducer() (producer instances).
-func kafkaClient(n int, t *tachymeter.Tachymeter) {
-	switch noop {
-	// If not noop, actually fire up Kafka connections and send messages.
-	case false:
-		cId := "client_" + strconv.Itoa(n)
-
-		conf := kafka.NewConfig()
-		if compression != kafka.CompressionNone {
-			conf.Producer.Compression = compression
-		}
-		conf.Producer.Flush.MaxMessages = batchSize
-
-		conf.Producer.MaxMessageBytes = msgSize + 50
-
-		client, err := kafka.NewClient(brokers, conf)
-		if err != nil {
-			log.Println(err)
-			os.Exit(1)
-		} else {
-			log.Printf("%s connected\n", cId)
-		}
-		for i := 0; i < producers; i++ {
-			go clientProducer(client, t)
-		}
-	// If noop, we're not creating connections at all.
-	// Just generate messages and burn CPU.
-	default:
-		for i := 0; i < producers; i++ {
-			go clientDummyProducer(t)
-		}
-	}
-	<-killClients
-}
-
-// Returns a random message generated from the chars byte slice.
-// Message length of m bytes as defined by msgSize.
+// randMsg returns a random message generated from the chars byte slice.
+// Message length of m bytes as defined by Config.msgSize.
 func randMsg(m []byte, generator rand.Rand) {
 	for i := range m {
 		m[i] = chars[generator.Intn(len(chars))]
 	}
 }
 
-// Global counter functions.
-func incrSent(n int64) {
-	i := <-sentCntr
-	sentCntr <- i + n
-}
-func fetchSent() int64 {
-	i := <-sentCntr
-	sentCntr <- i
-	return i
-}
-
-// Calculates aggregate raw message output in human / network units.
-func calcOutput(n int64) (float64, string) {
-	m := (float64(n) / 5) * float64(msgSize)
+// calcOutput takes a duration t and messages sent
+// and returns message rates in human readable network speeds.
+func calcOutput(t float64, n uint64) (float64, string) {
+	m := (float64(n) / t) * float64(Config.msgSize)
 	var o string
 	switch {
 	case m >= 131072:
@@ -238,105 +303,4 @@ func calcOutput(n int64) (float64, string) {
 		o = strconv.FormatFloat(m/1024, 'f', 0, 64) + "KB/sec"
 	}
 	return m, o
-}
-
-func main() {
-	// Listens for signals.
-	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
-
-	if graphiteIp != "" {
-		go graphiteWriter()
-	}
-
-	// Print Sangrenel startup info.
-	fmt.Println("\n::: Sangrenel :::")
-	fmt.Printf("\nStarting %d client workers, %d producers per worker\n", clients, producers)
-	fmt.Printf("Message size %d bytes, %d message limit per batch\n", msgSize, batchSize)
-	switch compressionOpt {
-	case "none":
-		fmt.Println("Compression: none")
-	case "gzip":
-		fmt.Println("Compression: GZIP")
-	case "snappy":
-		fmt.Println("Compression: Snappy")
-	}
-
-	t := tachymeter.New(&tachymeter.Config{Size: 300000, Safe: true})
-
-	// Start client workers.
-	for i := 0; i < clients; i++ {
-		go kafkaClient(i+1, t)
-	}
-
-	// Start Sangrenel periodic info output.
-	tick := time.Tick(5 * time.Second)
-
-	var currCnt, lastCnt int64
-	start := time.Now()
-	for {
-		select {
-		case <-tick:
-			// Set tachymeter wall time.
-			t.SetWallTime(time.Since(start))
-
-			// Set last and current to last read sent count.
-			lastCnt = currCnt
-
-			// Get actual current sent count, then delta from last count.
-			// Delta is divided by update interval (5s) for per-second rate over a window.
-			currCnt = fetchSent()
-			deltaCnt := currCnt - lastCnt
-
-			stats := t.Calc()
-
-			outputBytes, outputString := calcOutput(deltaCnt)
-
-			// Update the metrics map for the Graphite writer.
-			metrics["rate"] = stats.Rate.Second
-			metrics["output"] = outputBytes
-			metrics["5p"] = (float64(stats.Time.Long5p.Nanoseconds()) / 1000) / 1000
-			// Add ts for Graphite.
-			now := time.Now()
-			ts := float64(now.Unix())
-			metrics["timestamp"] = ts
-
-			if graphiteIp != "" {
-				metricsOutgoing <- metrics
-			}
-
-			fmt.Println()
-			log.Printf("Generating %s @ %.0f messages/sec | topic: %s | %.2fms top 5%% latency\n",
-				outputString,
-				metrics["rate"],
-				topic,
-				metrics["5p"])
-
-			stats.Dump()
-
-			// Check if the tacymeter size needs to be increased
-			// to avoid sampling. Otherwise, just reset it.
-			if int(deltaCnt) > len(t.Times) {
-				newTachy := tachymeter.New(&tachymeter.Config{Size: int(2 * deltaCnt), Safe: true})
-				// This is actually dangerous;
-				// this could swap in a tachy with unlocked
-				// mutexes while the current one has locks held.
-				*t = *newTachy
-			} else {
-				t.Reset()
-			}
-
-			// Reset interval time.
-			start = time.Now()
-
-		// Waits for signals. Currently just brutally kills Sangrenel.
-		case <-signals:
-			fmt.Println("Killing Connections")
-			for i := 0; i < clients; i++ {
-				killClients <- true
-			}
-			close(killClients)
-			time.Sleep(2 * time.Second)
-			os.Exit(0)
-		}
-	}
 }

@@ -62,7 +62,6 @@ func graphiteWriter() {
 		delete(metrics, "timestamp")
 
 		for k, v := range metrics {
-			//fmt.Printf("%s.%s %f %f\n", metricsPrefix, k, v, ts)
 			_, err := fmt.Fprintf(graphite, "%s.sangrenel.%s %f %d\n", metricsPrefix, k, v, ts)
 			if err != nil {
 				log.Printf("Error flushing to Graphite: %s", err)
