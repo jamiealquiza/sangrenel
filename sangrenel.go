@@ -33,7 +33,7 @@ import (
 	"syscall"
 	"time"
 
-	kafka "github.com/Shopify/sarama"
+	"gopkg.in/Shopify/sarama.v1"
 	"github.com/jamiealquiza/tachymeter"
 )
 
@@ -45,7 +45,7 @@ var (
 	msgRate        int64
 	batchSize      int
 	compressionOpt string
-	compression    kafka.CompressionCodec
+	compression    sarama.CompressionCodec
 	clients        int
 	producers      int
 	noop           bool
@@ -75,11 +75,11 @@ func init() {
 
 	switch compressionOpt {
 	case "gzip":
-		compression = kafka.CompressionGZIP
+		compression = sarama.CompressionGZIP
 	case "snappy":
-		compression = kafka.CompressionSnappy
+		compression = sarama.CompressionSnappy
 	case "none":
-		compression = kafka.CompressionNone
+		compression = sarama.CompressionNone
 	default:
 		fmt.Printf("Invalid compression option: %s\n", compressionOpt)
 		os.Exit(1)
@@ -91,8 +91,8 @@ func init() {
 // clientProducer generates random messages and writes to Kafka.
 // Workers track and limit message rates using incrSent() and fetchSent().
 // Default 5 instances of clientProducer are created under each Kafka client.
-func clientProducer(c kafka.Client, t *tachymeter.Tachymeter) {
-	producer, err := kafka.NewSyncProducerFromClient(c)
+func clientProducer(c sarama.Client, t *tachymeter.Tachymeter) {
+	producer, err := sarama.NewSyncProducerFromClient(c)
 	if err != nil {
 		log.Println(err.Error())
 	}
@@ -118,7 +118,7 @@ func clientProducer(c kafka.Client, t *tachymeter.Tachymeter) {
 		var start time.Time
 		for fetchSent()-countStart < msgRate {
 			randMsg(msgData, *generator)
-			msg := &kafka.ProducerMessage{Topic: topic, Value: kafka.ByteEncoder(msgData)}
+			msg := &sarama.ProducerMessage{Topic: topic, Value: sarama.ByteEncoder(msgData)}
 
 			start = time.Now()
 			_, _, err = producer.SendMessage(msg)
@@ -180,21 +180,21 @@ func kafkaClient(n int, t *tachymeter.Tachymeter) {
 	case false:
 		cId := "client_" + strconv.Itoa(n)
 
-		conf := kafka.NewConfig()
-		if compression != kafka.CompressionNone {
-			conf.Producer.Compression = compression
-		}
-		conf.Producer.Flush.MaxMessages = batchSize
+		conf := sarama.NewConfig()
 
+		conf.Producer.Compression = compression
+		conf.Producer.Return.Successes = true
+		conf.Producer.Flush.MaxMessages = batchSize
 		conf.Producer.MaxMessageBytes = msgSize + 50
 
-		client, err := kafka.NewClient(brokers, conf)
+		client, err := sarama.NewClient(brokers, conf)
 		if err != nil {
 			log.Println(err)
 			os.Exit(1)
 		} else {
 			log.Printf("%s connected\n", cId)
 		}
+
 		for i := 0; i < producers; i++ {
 			go clientProducer(client, t)
 		}
