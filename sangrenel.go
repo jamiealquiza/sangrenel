@@ -45,8 +45,8 @@ type config struct {
 	msgRate            uint64
 	batchSize          int
 	compression        sarama.CompressionCodec
-	clients            int
-	producersPerClient int
+	workers            int
+	producersPerWorker int
 	noop               bool
 }
 
@@ -64,13 +64,13 @@ var (
 
 func init() {
 	flag.StringVar(&Config.topic, "topic", "sangrenel", "Kafka topic to produce to")
-	flag.IntVar(&Config.msgSize, "size", 300, "Message size in bytes")
-	flag.Uint64Var(&Config.msgRate, "rate", 100000000, "Apply a global message rate limit")
-	flag.IntVar(&Config.batchSize, "batch", 1, "Messages per batch")
+	flag.IntVar(&Config.msgSize, "message-size", 300, "Message size (bytes)")
+	flag.Uint64Var(&Config.msgRate, "produce-rate", 100000000, "Global producer rate limit")
+	flag.IntVar(&Config.batchSize, "message-batch-size", 1, "Messages per batch")
 	compression := flag.String("compression", "none", "Message compression: none, gzip, snappy")
-	flag.BoolVar(&Config.noop, "noop", false, "Test message generation performance, do not transmit messages")
-	flag.IntVar(&Config.clients, "clients", 1, "Number of Kafka client workers")
-	flag.IntVar(&Config.producersPerClient, "producers-per-client", 5, "Number of producer goroutines per client")
+	flag.BoolVar(&Config.noop, "noop", false, "Test message generation performance (does not connect to Kafka)")
+	flag.IntVar(&Config.workers, "workers", 1, "Number of Kafka client workers")
+	flag.IntVar(&Config.producersPerWorker, "producers-per-worker", 5, "Number of producer goroutines per client worker")
 	brokerString := flag.String("brokers", "localhost:9092", "Comma delimited list of Kafka brokers")
 	flag.Parse()
 
@@ -99,7 +99,7 @@ func main() {
 
 	// Print Sangrenel startup info.
 	fmt.Println("\n::: Sangrenel :::")
-	fmt.Printf("\nStarting %d client workers, %d producers per worker\n", Config.clients, Config.producersPerClient)
+	fmt.Printf("\nStarting %d client workers, %d producers per worker\n", Config.workers, Config.producersPerWorker)
 	fmt.Printf("Message size %d bytes, %d message limit per batch\n", Config.msgSize, Config.batchSize)
 
 	switch Config.compression {
@@ -114,7 +114,7 @@ func main() {
 	t := tachymeter.New(&tachymeter.Config{Size: 300000, Safe: true})
 
 	// Start client workers.
-	for i := 0; i < Config.clients; i++ {
+	for i := 0; i < Config.workers; i++ {
 		go kafkaClient(i+1, t)
 	}
 
@@ -181,7 +181,7 @@ func main() {
 		// Waits for signals. Currently just brutally kills Sangrenel.
 		case <-signals:
 			fmt.Println("Killing Connections")
-			for i := 0; i < Config.clients; i++ {
+			for i := 0; i < Config.workers; i++ {
 				killClients <- true
 			}
 			close(killClients)
@@ -297,13 +297,13 @@ func kafkaClient(n int, t *tachymeter.Tachymeter) {
 			log.Printf("%s connected\n", cId)
 		}
 
-		for i := 0; i < Config.producersPerClient; i++ {
+		for i := 0; i < Config.producersPerWorker; i++ {
 			go clientProducer(client, t)
 		}
 	// If noop, we're not creating connections at all.
 	// Just generate messages and burn CPU.
 	default:
-		for i := 0; i < Config.producersPerClient; i++ {
+		for i := 0; i < Config.producersPerWorker; i++ {
 			go clientDummyProducer(t)
 		}
 	}
