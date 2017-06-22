@@ -25,6 +25,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math"
 	"math/rand"
 	"os"
 	"strconv"
@@ -235,8 +236,26 @@ func writer(c sarama.Client, t *tachymeter.Tachymeter) {
 		countStart := atomic.LoadUint64(&sentCnt)
 		var start time.Time // TODO revisit if this should be moved.
 
-		for atomic.LoadUint64(&sentCnt)-countStart < Config.msgRate {
-			for i := 0; i < Config.batchSize; i++ {
+		for {
+			// Break if the global rate limit was met, or, if
+			// we'd exceed it assuming all writers wrote a max batch size
+			// for this interval.
+			intervalSent := atomic.LoadUint64(&sentCnt) - countStart
+			sendEstimate := intervalSent + uint64(Config.batchSize*Config.workers*(Config.writersPerWorker-1))
+			if sendEstimate >= Config.msgRate {
+				break
+			}
+
+			// Estimate the batch size. This should shrink
+			// if we're near the rate limit. Estimated batch size =
+			// amount left to send for this interval / number of writers
+			// we have available to send this amount. If the estimate
+			// is lower than the configured batch size, send that amount
+			// instead.
+			toSend := (Config.msgRate - intervalSent) / uint64((Config.workers * Config.writersPerWorker))
+			n := int(math.Min(float64(toSend), float64(Config.batchSize)))
+
+			for i := 0; i < n; i++ {
 				// Gen message.
 				msgData := make([]byte, Config.msgSize)
 				randMsg(msgData, *generator)
