@@ -111,12 +111,14 @@ func main() {
 	}
 
 	var currCnt, lastCnt uint64
-	interval := 5*time.Second
+	interval := 5 * time.Second
 	ticker := time.Tick(interval)
 	start := time.Now()
 
 	for {
 		<-ticker
+
+		intervalTime := time.Since(start).Seconds()
 
 		// Set tachymeter wall time.
 		t.SetWallTime(time.Since(start))
@@ -127,13 +129,13 @@ func main() {
 		currCnt = atomic.LoadUint64(&sentCnt)
 		sentSinceLastInterval := currCnt - lastCnt
 
-		outputBytes, outputString := calcOutput(time.Since(start).Seconds(), sentSinceLastInterval)
+		outputBytes, outputString := calcOutput(intervalTime, sentSinceLastInterval)
 
 		// Summarize tachymeter data.
 		stats := t.Calc()
 
 		// Update the metrics map for the Graphite writer.
-		metrics["rate"] = stats.Rate.Second
+		metrics["rate"] = float64(sentSinceLastInterval) / intervalTime
 		metrics["output"] = outputBytes
 		metrics["p99"] = (float64(stats.Time.P99.Nanoseconds()) / 1000) / 1000
 		metrics["timestamp"] = float64(time.Now().Unix())
@@ -221,12 +223,7 @@ func writer(c sarama.Client, t *tachymeter.Tachymeter) {
 
 	source := rand.NewSource(time.Now().UnixNano())
 	generator := rand.New(source)
-	msgData := make([]byte, Config.msgSize)
-
-	// Sent is a local accumulator used to periodically update the global counter.
-	// The global counter can become a bottleneck with too many threads so the
-	// update is done after every 10 messages sent.
-	var sent uint64
+	msgBatch := make([]*sarama.ProducerMessage, 0, Config.batchSize)
 
 	for {
 		// Message rate limiting works by having all writer loops incrementing
@@ -235,25 +232,30 @@ func writer(c sarama.Client, t *tachymeter.Tachymeter) {
 		// for the remainder of the 1 second window.
 		rateEnd := time.Now().Add(time.Second)
 		countStart := atomic.LoadUint64(&sentCnt)
-		var start time.Time
+		var start time.Time // TODO revisit if this should be moved.
+
 		for atomic.LoadUint64(&sentCnt)-countStart < Config.msgRate {
-			randMsg(msgData, *generator)
-			msg := &sarama.ProducerMessage{Topic: Config.topic, Value: sarama.ByteEncoder(msgData)}
+			for i := 0; i < Config.batchSize; i++ {
+				// Gen message.
+				msgData := make([]byte, Config.msgSize)
+				randMsg(msgData, *generator)
+				msg := &sarama.ProducerMessage{Topic: Config.topic, Value: sarama.ByteEncoder(msgData)}
+				// Append to batch.
+				msgBatch = append(msgBatch, msg)
+			}
 
 			start = time.Now()
-			_, _, err = producer.SendMessage(msg)
+			err = producer.SendMessages(msgBatch)
 			if err != nil {
 				log.Println(err)
 			} else {
 				t.AddTime(time.Since(start))
-				sent++
-
-				if sent == 10 {
-					atomic.AddUint64(&sentCnt, sent)
-					sent = 0
-				}
+				atomic.AddUint64(&sentCnt, uint64(len(msgBatch)))
 			}
+
+			msgBatch = msgBatch[:0]
 		}
+
 		// If the global per-second rate limit was met,
 		// the inner loop breaks and the outer loop sleeps for the interval remainder.
 		time.Sleep(rateEnd.Sub(time.Now()) + time.Since(start))
