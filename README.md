@@ -30,7 +30,7 @@ Usage of sangrenel:
   -graphite-ip string
         Destination Graphite IP address
   -graphite-metrics-prefix string
-        Top-level Graphite namespace prefix (defaults to hostname) (default "mbp.local")
+        Top-level Graphite namespace prefix (defaults to hostname) (default "ja.local")
   -graphite-port string
         Destination Graphite plaintext port
   -message-batch-size int
@@ -41,6 +41,8 @@ Usage of sangrenel:
         Test message generation performance (does not connect to Kafka)
   -produce-rate uint
         Global write rate limit (messages/sec) (default 100000000)
+  -required-acks string
+        RequiredAcks config: none, local, all (default "local")
   -topic string
         Kafka topic to produce to (default "sangrenel")
   -workers int
@@ -51,7 +53,7 @@ Usage of sangrenel:
 
 Sangrenel uses the Kafka client library, [Sarama](https://github.com/Shopify/sarama). Sangrenel starts one or more workers, each of which maintain a unique Kafka client connection to the target cluster. Each worker has a number of writers which generate and send message data to Kafka, sharing the parent worker client connection. The number of workers is configurable via the `-workers` flag, the number of writers per worker via the `-writers-per-worker`. This is done for scaling purposes; while a single Sarama client can be used for multiple writers (which live in separate goroutines), performance begings to flatline at a certain point. It's best to leave the writers-per-worker at the default 5 and scaling the worker count as needed, but the option is exposed for more control. Left as a technical exercise for the user, there's a different between 2 workers with 5 writers each and 1 worker with 10 writers.
 
-The `-topic` flag specifies which topic is used, allowing configs such as parition count and replication factor to be prepared ahead of time for performance comparisons (by switching which topic Sangrenel is using). The `-message-batch-size`, `-message-size` and `-produce-rate` flags can be used to dictate message size, number of messages to batch per write, and the total Sangrenel write rate. 
+The `-topic` flag specifies which topic is used, allowing configs such as parition count and replication factor to be prepared ahead of time for performance comparisons (by switching which topic Sangrenel is using). The `-message-batch-size`, `-message-size` and `-produce-rate` flags can be used to dictate message size, number of messages to batch per write, and the total Sangrenel write rate.  `-required-acks` sets the Sarama [RequiredAcks](https://godoc.org/github.com/Shopify/sarama#RequiredAcks) config.
 
 Two important factors to note:
 - Sangrenel uses Sarama's [SyncProducer](https://godoc.org/github.com/Shopify/sarama#SyncProducer), meaning messages are written synchronously
@@ -64,48 +66,50 @@ If optionally defined, some metric data can be written to Graphite. More/better 
 ### Example
 
 <pre>
-% sangrenel -message-batch-size=250 -message-size=180 -produce-rate=5000
-                                 
-Starting 1 client workers, 5 writers per worker
-Message size 180 bytes, 250 message limit per batch
-Compression: none                
-2017/06/22 11:32:41 worker_1 connected
-                                 
-2017/06/22 11:32:46 Generating 7Mb/sec @ 4996 messages/sec | topic: sangrenel | 15.64ms p99 batch latency
-> Batch Statistics, Last 5.0s:   
-100 samples of 100 events
-Cumulative:     467.289815ms
-HMean:          3.815624ms
-Avg.:           4.672898ms
-p50:            3.923364ms
-p75:            5.242536ms
-p95:            10.149782ms
-p99:            15.644189ms
-p999:           15.834959ms
-Long 5%:        12.55286ms
-Short 5%:       2.085274ms
-Max:            15.834959ms
-Min:            1.794895ms
-Range:          14.040064ms
-Rate/sec.:      19.98
+% sangrenel -message-batch-size=50 -message-size=180 -produce-rate=5000
 
-2017/06/22 11:32:51 Generating 7Mb/sec @ 5003 messages/sec | topic: sangrenel | 5.74ms p99 batch latency
+Starting 1 client workers, 5 writers per worker
+Message size 180 bytes, 50 message limit per batch
+Compression: none, RequiredAcks: local
+2017/06/22 12:46:43 worker_1 connected
+
+2017/06/22 12:46:48 [ topic: sangrenel ]
+> Producing 7Mb/sec @ 4995 msgs/sec. | 4.46ms p99 batch write | error rate 0.00%
 > Batch Statistics, Last 5.0s:
-100 samples of 100 events
-Cumulative:     342.375048ms
-HMean:          3.172272ms
-Avg.:           3.42375ms
-p50:            3.3304ms
-p75:            3.977578ms
-p95:            4.974324ms
-p99:            5.741539ms
-p999:           6.122486ms
-Long 5%:        5.427207ms
-Short 5%:       1.797883ms
-Max:            6.122486ms
-Min:            1.678467ms
-Range:          4.444019ms
-Rate/sec.:      20.01
+500 samples of 500 events
+Cumulative:     825.042897ms
+HMean:          1.453488ms
+Avg.:           1.650085ms
+p50:            1.356251ms
+p75:            1.715414ms
+p95:            3.228459ms
+p99:            4.455199ms
+p999:           8.775584ms
+Long 5%:        4.529264ms
+Short 5%:       1.024227ms
+Max:            8.775584ms
+Min:            924.004µs
+Range:          7.85158ms
+Rate/sec.:      99.91
+
+2017/06/22 12:46:53 [ topic: sangrenel ]
+> Producing 7Mb/sec @ 5000 msgs/sec. | 2.98ms p99 batch write | error rate 0.00%
+> Batch Statistics, Last 5.0s:
+500 samples of 500 events
+Cumulative:     674.712093ms
+HMean:          1.293377ms
+Avg.:           1.349424ms
+p50:            1.252731ms
+p75:            1.359836ms
+p95:            2.038691ms
+p99:            2.978776ms
+p999:           3.539097ms
+Long 5%:        2.668488ms
+Short 5%:       994.556µs
+Max:            3.539097ms
+Min:            770.541µs
+Range:          2.768556ms
+Rate/sec.:      100.01
 </pre>
 
 ### Misc.
