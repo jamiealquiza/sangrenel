@@ -153,19 +153,21 @@ func main() {
 			Config.topic,
 			metrics["p99"])
 
-		fmt.Printf("> Batch Statistics, Last %.1fs:\n", intervalTime)
-		stats.Dump()
+		if !Config.noop {
+			fmt.Printf("> Batch Statistics, Last %.1fs:\n", intervalTime)
+			stats.Dump()
 
-		// Check if the tacymeter size needs to be increased
-		// to avoid sampling. Otherwise, just reset it.
-		if int(sentSinceLastInterval) > len(t.Times) {
-			newTachy := tachymeter.New(&tachymeter.Config{Size: int(2 * sentSinceLastInterval), Safe: true})
-			// This is actually dangerous;
-			// this could swap in a tachy with unlocked
-			// mutexes while the current one has locks held.
-			*t = *newTachy
-		} else {
-			t.Reset()
+			// Check if the tacymeter size needs to be increased
+			// to avoid sampling. Otherwise, just reset it.
+			if int(sentSinceLastInterval) > len(t.Times) {
+				newTachy := tachymeter.New(&tachymeter.Config{Size: int(2 * sentSinceLastInterval)})
+				// This is actually dangerous;
+				// this could swap in a tachy with unlocked
+				// mutexes while the current one has locks held.
+				*t = *newTachy
+			} else {
+				t.Reset()
+			}
 		}
 
 		// Reset interval time.
@@ -290,19 +292,22 @@ func writer(c sarama.Client, t *tachymeter.Tachymeter) {
 func dummyWriter(t *tachymeter.Tachymeter) {
 	source := rand.NewSource(time.Now().UnixNano())
 	generator := rand.New(source)
-	msg := make([]byte, Config.msgSize)
-
-	var sent int64
+	msgBatch := make([]*sarama.ProducerMessage, 0, Config.batchSize)
 
 	for {
-		randMsg(msg, *generator)
-
-		t.AddTime(time.Duration(0))
-		sent++
-		if sent == 10 {
-			atomic.AddUint64(&sentCnt, 10)
-			sent = 0
+		for i := 0; i < Config.batchSize; i++ {
+			// Gen message.
+			msgData := make([]byte, Config.msgSize)
+			randMsg(msgData, *generator)
+			msg := &sarama.ProducerMessage{Topic: Config.topic, Value: sarama.ByteEncoder(msgData)}
+			// Append to batch.
+			msgBatch = append(msgBatch, msg)
 		}
+
+		atomic.AddUint64(&sentCnt, uint64(len(msgBatch)))
+		t.AddTime(time.Duration(0))
+
+		msgBatch = msgBatch[:0]
 	}
 }
 
