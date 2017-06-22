@@ -25,6 +25,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math"
 	"math/rand"
 	"os"
 	"strconv"
@@ -111,12 +112,14 @@ func main() {
 	}
 
 	var currCnt, lastCnt uint64
-	interval := 5*time.Second
+	interval := 5 * time.Second
 	ticker := time.Tick(interval)
 	start := time.Now()
 
 	for {
 		<-ticker
+
+		intervalTime := time.Since(start).Seconds()
 
 		// Set tachymeter wall time.
 		t.SetWallTime(time.Since(start))
@@ -127,13 +130,13 @@ func main() {
 		currCnt = atomic.LoadUint64(&sentCnt)
 		sentSinceLastInterval := currCnt - lastCnt
 
-		outputBytes, outputString := calcOutput(time.Since(start).Seconds(), sentSinceLastInterval)
+		outputBytes, outputString := calcOutput(intervalTime, sentSinceLastInterval)
 
 		// Summarize tachymeter data.
 		stats := t.Calc()
 
 		// Update the metrics map for the Graphite writer.
-		metrics["rate"] = stats.Rate.Second
+		metrics["rate"] = float64(sentSinceLastInterval) / intervalTime
 		metrics["output"] = outputBytes
 		metrics["p99"] = (float64(stats.Time.P99.Nanoseconds()) / 1000) / 1000
 		metrics["timestamp"] = float64(time.Now().Unix())
@@ -144,24 +147,27 @@ func main() {
 
 		// Write output stats.
 		fmt.Println()
-		log.Printf("Generating %s @ %.0f messages/sec | topic: %s | %.2fms p99 latency\n",
+		log.Printf("Generating %s @ %.0f messages/sec | topic: %s | %.2fms p99 batch latency\n",
 			outputString,
 			metrics["rate"],
 			Config.topic,
 			metrics["p99"])
 
-		stats.Dump()
+		if !Config.noop {
+			fmt.Printf("> Batch Statistics, Last %.1fs:\n", intervalTime)
+			stats.Dump()
 
-		// Check if the tacymeter size needs to be increased
-		// to avoid sampling. Otherwise, just reset it.
-		if int(sentSinceLastInterval) > len(t.Times) {
-			newTachy := tachymeter.New(&tachymeter.Config{Size: int(2 * sentSinceLastInterval), Safe: true})
-			// This is actually dangerous;
-			// this could swap in a tachy with unlocked
-			// mutexes while the current one has locks held.
-			*t = *newTachy
-		} else {
-			t.Reset()
+			// Check if the tacymeter size needs to be increased
+			// to avoid sampling. Otherwise, just reset it.
+			if int(sentSinceLastInterval) > len(t.Times) {
+				newTachy := tachymeter.New(&tachymeter.Config{Size: int(2 * sentSinceLastInterval)})
+				// This is actually dangerous;
+				// this could swap in a tachy with unlocked
+				// mutexes while the current one has locks held.
+				*t = *newTachy
+			} else {
+				t.Reset()
+			}
 		}
 
 		// Reset interval time.
@@ -221,42 +227,61 @@ func writer(c sarama.Client, t *tachymeter.Tachymeter) {
 
 	source := rand.NewSource(time.Now().UnixNano())
 	generator := rand.New(source)
-	msgData := make([]byte, Config.msgSize)
-
-	// Sent is a local accumulator used to periodically update the global counter.
-	// The global counter can become a bottleneck with too many threads so the
-	// update is done after every 10 messages sent.
-	var sent uint64
+	msgBatch := make([]*sarama.ProducerMessage, 0, Config.batchSize)
 
 	for {
 		// Message rate limiting works by having all writer loops incrementing
 		// a global counter and tracking the aggregate per-second progress.
 		// If the configured rate is met, the worker will sleep
 		// for the remainder of the 1 second window.
-		rateEnd := time.Now().Add(time.Second)
+		intervalEnd := time.Now().Add(time.Second)
 		countStart := atomic.LoadUint64(&sentCnt)
-		var start time.Time
-		for atomic.LoadUint64(&sentCnt)-countStart < Config.msgRate {
-			randMsg(msgData, *generator)
-			msg := &sarama.ProducerMessage{Topic: Config.topic, Value: sarama.ByteEncoder(msgData)}
 
-			start = time.Now()
-			_, _, err = producer.SendMessage(msg)
+		var sendTime time.Time
+
+		for {
+			// Break if the global rate limit was met, or, if
+			// we'd exceed it assuming all writers wrote a max batch size
+			// for this interval.
+			intervalSent := atomic.LoadUint64(&sentCnt) - countStart
+			sendEstimate := intervalSent + uint64(Config.batchSize*Config.workers*(Config.writersPerWorker-1))
+			if sendEstimate >= Config.msgRate {
+				break
+			}
+
+			// Estimate the batch size. This should shrink
+			// if we're near the rate limit. Estimated batch size =
+			// amount left to send for this interval / number of writers
+			// we have available to send this amount. If the estimate
+			// is lower than the configured batch size, send that amount
+			// instead.
+			toSend := (Config.msgRate - intervalSent) / uint64((Config.workers * Config.writersPerWorker))
+			n := int(math.Min(float64(toSend), float64(Config.batchSize)))
+
+			for i := 0; i < n; i++ {
+				// Gen message.
+				msgData := make([]byte, Config.msgSize)
+				randMsg(msgData, *generator)
+				msg := &sarama.ProducerMessage{Topic: Config.topic, Value: sarama.ByteEncoder(msgData)}
+				// Append to batch.
+				msgBatch = append(msgBatch, msg)
+			}
+
+			sendTime = time.Now()
+			err = producer.SendMessages(msgBatch)
 			if err != nil {
 				log.Println(err)
 			} else {
-				t.AddTime(time.Since(start))
-				sent++
-
-				if sent == 10 {
-					atomic.AddUint64(&sentCnt, sent)
-					sent = 0
-				}
+				t.AddTime(time.Since(sendTime))
+				atomic.AddUint64(&sentCnt, uint64(len(msgBatch)))
 			}
+
+			msgBatch = msgBatch[:0]
 		}
+
 		// If the global per-second rate limit was met,
 		// the inner loop breaks and the outer loop sleeps for the interval remainder.
-		time.Sleep(rateEnd.Sub(time.Now()) + time.Since(start))
+		time.Sleep(intervalEnd.Sub(time.Now()))
 	}
 }
 
@@ -267,19 +292,22 @@ func writer(c sarama.Client, t *tachymeter.Tachymeter) {
 func dummyWriter(t *tachymeter.Tachymeter) {
 	source := rand.NewSource(time.Now().UnixNano())
 	generator := rand.New(source)
-	msg := make([]byte, Config.msgSize)
-
-	var sent int64
+	msgBatch := make([]*sarama.ProducerMessage, 0, Config.batchSize)
 
 	for {
-		randMsg(msg, *generator)
-
-		t.AddTime(time.Duration(0))
-		sent++
-		if sent == 10 {
-			atomic.AddUint64(&sentCnt, 10)
-			sent = 0
+		for i := 0; i < Config.batchSize; i++ {
+			// Gen message.
+			msgData := make([]byte, Config.msgSize)
+			randMsg(msgData, *generator)
+			msg := &sarama.ProducerMessage{Topic: Config.topic, Value: sarama.ByteEncoder(msgData)}
+			// Append to batch.
+			msgBatch = append(msgBatch, msg)
 		}
+
+		atomic.AddUint64(&sentCnt, uint64(len(msgBatch)))
+		t.AddTime(time.Duration(0))
+
+		msgBatch = msgBatch[:0]
 	}
 }
 
