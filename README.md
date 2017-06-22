@@ -64,65 +64,48 @@ If optionally defined, some metric data can be written to Graphite. More/better 
 ### Example
 
 <pre>
-% sangrenel -brokers="localhost:9092" -message-size=250 -topic=test -workers=3
+% sangrenel -message-batch-size=250 -message-size=180 -produce-rate=5000
+                                 
+Starting 1 client workers, 5 writers per worker
+Message size 180 bytes, 250 message limit per batch
+Compression: none                
+2017/06/22 11:32:41 worker_1 connected
+                                 
+2017/06/22 11:32:46 Generating 7Mb/sec @ 4996 messages/sec | topic: sangrenel | 15.64ms p99 batch latency
+> Batch Statistics, Last 5.0s:   
+100 samples of 100 events
+Cumulative:     467.289815ms
+HMean:          3.815624ms
+Avg.:           4.672898ms
+p50:            3.923364ms
+p75:            5.242536ms
+p95:            10.149782ms
+p99:            15.644189ms
+p999:           15.834959ms
+Long 5%:        12.55286ms
+Short 5%:       2.085274ms
+Max:            15.834959ms
+Min:            1.794895ms
+Range:          14.040064ms
+Rate/sec.:      19.98
 
-Starting 3 client workers, 5 writers per worker
-Message size 250 bytes, 1 message limit per batch
-Compression: none
-2017/06/21 17:32:06 worker_2 connected
-2017/06/21 17:32:06 worker_3 connected
-2017/06/21 17:32:06 worker_1 connected
-
-2017/06/21 17:32:11 Generating 50Mb/sec @ 26446 messages/sec | topic: test | 0.84ms p99 latency
-132279 samples of 132279 events
-Cumulative:     1m13.628081218s
-HMean:          546.495µs
-Avg.:           556.612µs
-p50:            541.849µs
-p75:            582.889µs
-p95:            675.962µs
-p99:            838.907µs
-p999:           1.155118ms
-Long 5%:        808.479µs
-Short 5%:       445.683µs
-Max:            7.052061ms
-Min:            173.118µs
-Range:          6.878943ms
-Rate/sec.:      26446.33
-
-2017/06/21 17:32:16 Generating 51Mb/sec @ 26494 messages/sec | topic: test | 0.84ms p99 latency
-131189 samples of 131189 events
-Cumulative:     1m12.974667212s
-HMean:          546.536µs
-Avg.:           556.255µs
-p50:            539.445µs
-p75:            583.587µs
-p95:            690.266µs
-p99:            844.876µs
-p999:           1.132036ms
-Long 5%:        800.887µs
-Short 5%:       448.191µs
-Max:            3.887683ms
-Min:            194.041µs
-Range:          3.693642ms
-Rate/sec.:      26493.92
-
-2017/06/21 17:32:21 Generating 51Mb/sec @ 26632 messages/sec | topic: test | 0.82ms p99 latency
-131973 samples of 131973 events
-Cumulative:     1m12.986170902s
-HMean:          544.872µs
-Avg.:           553.038µs
-p50:            541.944µs
-p75:            578.615µs
-p95:            653.687µs
-p99:            818.307µs
-p999:           1.134189ms
-Long 5%:        770.477µs
-Short 5%:       451.758µs
-Max:            3.928126ms
-Min:            210.161µs
-Range:          3.717965ms
-Rate/sec.:      26631.91
+2017/06/22 11:32:51 Generating 7Mb/sec @ 5003 messages/sec | topic: sangrenel | 5.74ms p99 batch latency
+> Batch Statistics, Last 5.0s:
+100 samples of 100 events
+Cumulative:     342.375048ms
+HMean:          3.172272ms
+Avg.:           3.42375ms
+p50:            3.3304ms
+p75:            3.977578ms
+p95:            4.974324ms
+p99:            5.741539ms
+p999:           6.122486ms
+Long 5%:        5.427207ms
+Short 5%:       1.797883ms
+Max:            6.122486ms
+Min:            1.678467ms
+Range:          4.444019ms
+Rate/sec.:      20.01
 </pre>
 
 ### Misc.
