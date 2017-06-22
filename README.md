@@ -30,7 +30,7 @@ Usage of sangrenel:
   -graphite-ip string
         Destination Graphite IP address
   -graphite-metrics-prefix string
-        Top-level Graphite namespace prefix (defaults to hostname) (default "mbp.local")
+        Top-level Graphite namespace prefix (defaults to hostname) (default "ja.local")
   -graphite-port string
         Destination Graphite plaintext port
   -message-batch-size int
@@ -41,6 +41,8 @@ Usage of sangrenel:
         Test message generation performance (does not connect to Kafka)
   -produce-rate uint
         Global write rate limit (messages/sec) (default 100000000)
+  -required-acks string
+        RequiredAcks config: none, local, all (default "local")
   -topic string
         Kafka topic to produce to (default "sangrenel")
   -workers int
@@ -51,7 +53,7 @@ Usage of sangrenel:
 
 Sangrenel uses the Kafka client library, [Sarama](https://github.com/Shopify/sarama). Sangrenel starts one or more workers, each of which maintain a unique Kafka client connection to the target cluster. Each worker has a number of writers which generate and send message data to Kafka, sharing the parent worker client connection. The number of workers is configurable via the `-workers` flag, the number of writers per worker via the `-writers-per-worker`. This is done for scaling purposes; while a single Sarama client can be used for multiple writers (which live in separate goroutines), performance begings to flatline at a certain point. It's best to leave the writers-per-worker at the default 5 and scaling the worker count as needed, but the option is exposed for more control. Left as a technical exercise for the user, there's a different between 2 workers with 5 writers each and 1 worker with 10 writers.
 
-The `-topic` flag specifies which topic is used, allowing configs such as parition count and replication factor to be prepared ahead of time for performance comparisons (by switching which topic Sangrenel is using). The `-message-batch-size`, `-message-size` and `-produce-rate` flags can be used to dictate message size, number of messages to batch per write, and the total Sangrenel write rate. 
+The `-topic` flag specifies which topic is used, allowing configs such as parition count and replication factor to be prepared ahead of time for performance comparisons (by switching which topic Sangrenel is using). The `-message-batch-size`, `-message-size` and `-produce-rate` flags can be used to dictate message size, number of messages to batch per write, and the total Sangrenel write rate.  `-required-acks` sets the Sarama [RequiredAcks](https://godoc.org/github.com/Shopify/sarama#RequiredAcks) config.
 
 Two important factors to note:
 - Sangrenel uses Sarama's [SyncProducer](https://godoc.org/github.com/Shopify/sarama#SyncProducer), meaning messages are written synchronously
@@ -68,7 +70,7 @@ If optionally defined, some metric data can be written to Graphite. More/better 
 
 Starting 1 client workers, 5 writers per worker
 Message size 180 bytes, 50 message limit per batch
-Compression: none
+Compression: none, RequiredAcks: local
 2017/06/22 12:46:43 worker_1 connected
 
 2017/06/22 12:46:48 [ topic: sangrenel ]

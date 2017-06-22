@@ -44,6 +44,9 @@ type config struct {
 	msgRate          uint64
 	batchSize        int
 	compression      sarama.CompressionCodec
+	compressionName  string
+	requiredAcks     sarama.RequiredAcks
+	requiredAcksName string
 	workers          int
 	writersPerWorker int
 	noop             bool
@@ -65,7 +68,8 @@ func init() {
 	flag.IntVar(&Config.msgSize, "message-size", 300, "Message size (bytes)")
 	flag.Uint64Var(&Config.msgRate, "produce-rate", 100000000, "Global write rate limit (messages/sec)")
 	flag.IntVar(&Config.batchSize, "message-batch-size", 1, "Messages per batch")
-	compression := flag.String("compression", "none", "Message compression: none, gzip, snappy")
+	flag.StringVar(&Config.compressionName, "compression", "none", "Message compression: none, gzip, snappy")
+	flag.StringVar(&Config.requiredAcksName, "required-acks", "local", "RequiredAcks config: none, local, all")
 	flag.BoolVar(&Config.noop, "noop", false, "Test message generation performance (does not connect to Kafka)")
 	flag.IntVar(&Config.workers, "workers", 1, "Number of workers")
 	flag.IntVar(&Config.writersPerWorker, "writers-per-worker", 5, "Number of writer (Kafka producer) goroutines per worker")
@@ -74,7 +78,7 @@ func init() {
 
 	Config.brokers = strings.Split(*brokerString, ",")
 
-	switch *compression {
+	switch Config.compressionName {
 	case "gzip":
 		Config.compression = sarama.CompressionGZIP
 	case "snappy":
@@ -82,7 +86,19 @@ func init() {
 	case "none":
 		Config.compression = sarama.CompressionNone
 	default:
-		fmt.Printf("Invalid compression option: %s\n", *compression)
+		fmt.Printf("Invalid compression option: %s\n", Config.compressionName)
+		os.Exit(1)
+	}
+
+	switch Config.requiredAcksName {
+	case "none":
+		Config.requiredAcks = sarama.NoResponse
+	case "local":
+		Config.requiredAcks = sarama.WaitForLocal
+	case "all":
+		Config.requiredAcks = sarama.WaitForAll
+	default:
+		fmt.Printf("Invalid required-acks option: %s\n", Config.requiredAcksName)
 		os.Exit(1)
 	}
 }
@@ -95,15 +111,8 @@ func main() {
 	// Print Sangrenel startup info.
 	fmt.Printf("\nStarting %d client workers, %d writers per worker\n", Config.workers, Config.writersPerWorker)
 	fmt.Printf("Message size %d bytes, %d message limit per batch\n", Config.msgSize, Config.batchSize)
-
-	switch Config.compression {
-	case sarama.CompressionNone:
-		fmt.Println("Compression: none")
-	case sarama.CompressionGZIP:
-		fmt.Println("Compression: GZIP")
-	case sarama.CompressionSnappy:
-		fmt.Println("Compression: Snappy")
-	}
+	fmt.Printf("Compression: %s, RequiredAcks: %s\n",
+		Config.compressionName, Config.requiredAcksName)
 
 	t := tachymeter.New(&tachymeter.Config{Size: 300000, Safe: true})
 
@@ -199,6 +208,7 @@ func worker(n int, t *tachymeter.Tachymeter) {
 		conf := sarama.NewConfig()
 		conf.Producer.Compression = Config.compression
 		conf.Producer.Return.Successes = true
+		conf.Producer.RequiredAcks = Config.requiredAcks
 		conf.Producer.Flush.MaxMessages = Config.batchSize
 		conf.Producer.MaxMessageBytes = Config.msgSize + 50
 
