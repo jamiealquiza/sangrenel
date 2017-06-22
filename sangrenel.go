@@ -57,6 +57,7 @@ var (
 
 	// Counters / misc.
 	sentCnt uint64
+	errCnt  uint64
 )
 
 func init() {
@@ -111,7 +112,9 @@ func main() {
 		go worker(i+1, t)
 	}
 
-	var currCnt, lastCnt uint64
+	var currSentCnt, lastSentCnt uint64
+	var currErrCnt, lastErrCnt uint64
+
 	interval := 5 * time.Second
 	ticker := time.Tick(interval)
 	start := time.Now()
@@ -126,17 +129,25 @@ func main() {
 
 		// Get the sent count from the last interval, then the delta
 		// (sentSinceLastInterval) between the current and last interval.
-		lastCnt = currCnt
-		currCnt = atomic.LoadUint64(&sentCnt)
-		sentSinceLastInterval := currCnt - lastCnt
+		lastSentCnt = currSentCnt
+		currSentCnt = atomic.LoadUint64(&sentCnt)
+		sentSinceLastInterval := currSentCnt - lastSentCnt
 
 		outputBytes, outputString := calcOutput(intervalTime, sentSinceLastInterval)
+
+		// Update error counters.
+		lastErrCnt = currErrCnt
+		currErrCnt = atomic.LoadUint64(&errCnt)
+		errSinceLastInterval := currErrCnt - lastErrCnt
+
+		errRate := (float64(errSinceLastInterval) / float64(sentSinceLastInterval)) * 100
 
 		// Summarize tachymeter data.
 		stats := t.Calc()
 
 		// Update the metrics map for the Graphite writer.
 		metrics["rate"] = float64(sentSinceLastInterval) / intervalTime
+		metrics["error_rate"] = errRate
 		metrics["output"] = outputBytes
 		metrics["p99"] = (float64(stats.Time.P99.Nanoseconds()) / 1000) / 1000
 		metrics["timestamp"] = float64(time.Now().Unix())
@@ -147,11 +158,13 @@ func main() {
 
 		// Write output stats.
 		fmt.Println()
-		log.Printf("Generating %s @ %.0f messages/sec | topic: %s | %.2fms p99 batch latency\n",
+		log.Printf("[ topic: %s ]\n", Config.topic)
+		fmt.Printf("> Producing %s @ %.0f msgs/sec. | %.2fms p99 batch write | error rate %.2f%%\n",
 			outputString,
 			metrics["rate"],
-			Config.topic,
-			metrics["p99"])
+			//Config.topic,
+			metrics["p99"],
+			metrics["error_rate"])
 
 		if !Config.noop {
 			fmt.Printf("> Batch Statistics, Last %.1fs:\n", intervalTime)
@@ -270,11 +283,14 @@ func writer(c sarama.Client, t *tachymeter.Tachymeter) {
 			sendTime = time.Now()
 			err = producer.SendMessages(msgBatch)
 			if err != nil {
-				log.Println(err)
-			} else {
-				t.AddTime(time.Since(sendTime))
-				atomic.AddUint64(&sentCnt, uint64(len(msgBatch)))
+				// Sarama returns a ProducerErrors, which is a slice
+				// of errors per message errored. Use this count
+				// to establish an error rate.
+				atomic.AddUint64(&errCnt, uint64(len(err.(sarama.ProducerErrors))))
 			}
+
+			t.AddTime(time.Since(sendTime))
+			atomic.AddUint64(&sentCnt, uint64(len(msgBatch)))
 
 			msgBatch = msgBatch[:0]
 		}
