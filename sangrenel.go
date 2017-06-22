@@ -147,13 +147,13 @@ func main() {
 
 		// Write output stats.
 		fmt.Println()
-		log.Printf("Generating %s @ %.0f messages/sec | topic: %s | %.2fms p99 latency\n",
+		log.Printf("Generating %s @ %.0f messages/sec | topic: %s | %.2fms p99 batch latency\n",
 			outputString,
 			metrics["rate"],
 			Config.topic,
 			metrics["p99"])
 
-		fmt.Printf("[Batch Statistics, last %.1fs]\n", intervalTime)
+		fmt.Printf("> Batch Statistics, Last %.1fs:\n", intervalTime)
 		stats.Dump()
 
 		// Check if the tacymeter size needs to be increased
@@ -232,9 +232,10 @@ func writer(c sarama.Client, t *tachymeter.Tachymeter) {
 		// a global counter and tracking the aggregate per-second progress.
 		// If the configured rate is met, the worker will sleep
 		// for the remainder of the 1 second window.
-		rateEnd := time.Now().Add(time.Second)
+		intervalEnd := time.Now().Add(time.Second)
 		countStart := atomic.LoadUint64(&sentCnt)
-		var start time.Time // TODO revisit if this should be moved.
+
+		var sendTime time.Time
 
 		for {
 			// Break if the global rate limit was met, or, if
@@ -264,12 +265,12 @@ func writer(c sarama.Client, t *tachymeter.Tachymeter) {
 				msgBatch = append(msgBatch, msg)
 			}
 
-			start = time.Now()
+			sendTime = time.Now()
 			err = producer.SendMessages(msgBatch)
 			if err != nil {
 				log.Println(err)
 			} else {
-				t.AddTime(time.Since(start))
+				t.AddTime(time.Since(sendTime))
 				atomic.AddUint64(&sentCnt, uint64(len(msgBatch)))
 			}
 
@@ -278,7 +279,7 @@ func writer(c sarama.Client, t *tachymeter.Tachymeter) {
 
 		// If the global per-second rate limit was met,
 		// the inner loop breaks and the outer loop sleeps for the interval remainder.
-		time.Sleep(rateEnd.Sub(time.Now()) + time.Since(start))
+		time.Sleep(intervalEnd.Sub(time.Now()))
 	}
 }
 
