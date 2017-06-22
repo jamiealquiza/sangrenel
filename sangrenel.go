@@ -152,6 +152,7 @@ func main() {
 			Config.topic,
 			metrics["p99"])
 
+		fmt.Printf("[Batch Statistics, last %.1fs]\n", intervalTime)
 		stats.Dump()
 
 		// Check if the tacymeter size needs to be increased
