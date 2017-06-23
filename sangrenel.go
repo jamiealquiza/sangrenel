@@ -29,6 +29,7 @@ type config struct {
 	workers          int
 	writersPerWorker int
 	noop             bool
+	interval         int
 }
 
 var (
@@ -53,6 +54,7 @@ func init() {
 	flag.IntVar(&Config.workers, "workers", 1, "Number of workers")
 	flag.IntVar(&Config.writersPerWorker, "writers-per-worker", 5, "Number of writer (Kafka producer) goroutines per worker")
 	brokerString := flag.String("brokers", "localhost:9092", "Comma delimited list of Kafka brokers")
+	flag.IntVar(&Config.interval, "interval", 5, "Statistics output interval (seconds)")
 	flag.Parse()
 
 	Config.brokers = strings.Split(*brokerString, ",")
@@ -103,7 +105,7 @@ func main() {
 	var currSentCnt, lastSentCnt uint64
 	var currErrCnt, lastErrCnt uint64
 
-	interval := 5 * time.Second
+	interval := time.Duration(Config.interval) * time.Second
 	ticker := time.Tick(interval)
 	start := time.Now()
 

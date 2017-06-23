@@ -36,9 +36,11 @@ Usage of sangrenel:
   -graphite-ip string
         Destination Graphite IP address
   -graphite-metrics-prefix string
-        Top-level Graphite namespace prefix (defaults to hostname) (default "ja.local")
+        Top-level Graphite namespace prefix (defaults to hostname) (default "mbp.local")
   -graphite-port string
         Destination Graphite plaintext port
+  -interval int
+        Statistics output interval (seconds) (default 5)
   -message-batch-size int
         Messages per batch (default 1)
   -message-size int
