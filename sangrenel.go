@@ -156,7 +156,7 @@ func main() {
 			fmt.Printf("> Batches: %.2f batches/sec. | %s p99 | %s HMean | %s Min | %s Max\n",
 				stats.Rate.Second, round(stats.Time.P99), round(stats.Time.HMean), round(stats.Time.Min), round(stats.Time.Max))
 
-			fmt.Println(stats.Histogram.String(25))
+			fmt.Println(stats.Histogram.String(50))
 
 			// Check if the tacymeter size needs to be increased
 			// to avoid sampling. Otherwise, just reset it.

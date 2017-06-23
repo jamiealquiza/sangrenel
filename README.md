@@ -14,56 +14,57 @@ While using this tool, keep in mind that benchmarking is always an examination o
 Sangrenel takes [configurable](https://github.com/jamiealquiza/sangrenel#usage) message/batch sizing, concurrency and other settings and writes messages to a reference topic. Write latency, distribution, and throughput data is dumped every 5 seconds. 
 
 <pre>
-% sangrenel -message-size=800 -message-batch-size=500
+% sangrenel -message-size=800 -message-batch-size=500 -workers=3                                              
 
-Starting 1 client workers, 5 writers per worker
+Starting 3 client workers, 5 writers per worker
 Message size 800 bytes, 500 message limit per batch
 Compression: none, RequiredAcks: local
-2017/06/23 11:35:21 worker_1 connected
+2017/06/23 12:20:53 worker_1 connected
+2017/06/23 12:20:53 worker_3 connected
+2017/06/23 12:20:53 worker_2 connected
 
-2017/06/23 11:35:26 [ topic: sangrenel ]
-> Messages: 967Mb/sec @ 158377 msgs/sec. | error rate 0.00%
-> Batches: 316.75 batches/sec. | 8.178ms p99 | 3.962ms HMean | 2.481ms Min | 18.032ms Max
-   2.481ms - 4.036ms -------------------------
-   4.036ms - 5.591ms ----------------
-   5.591ms - 7.146ms ----
-   7.146ms - 8.701ms -
-  8.701ms - 10.256ms -
- 10.256ms - 11.811ms -
- 11.811ms - 13.367ms -
- 13.367ms - 14.922ms -
- 14.922ms - 16.477ms -
- 16.477ms - 18.032ms -
-
-
-2017/06/23 11:35:31 [ topic: sangrenel ]
-> Messages: 992Mb/sec @ 162449 msgs/sec. | error rate 0.00%
-> Batches: 324.90 batches/sec. | 8.084ms p99 | 3.961ms HMean | 2.519ms Min | 10.52ms Max
-   2.519ms - 3.319ms -------------
-   3.319ms - 4.119ms -------------------------
-   4.119ms - 4.919ms ----------------
-   4.919ms - 5.719ms -------
-   5.719ms - 6.519ms ---
-   6.519ms - 7.319ms --
-   7.319ms - 8.119ms -
-   8.119ms - 8.919ms -
-   8.919ms - 9.719ms -
-   9.719ms - 10.52ms -
+2017/06/23 12:20:58 [ topic: sangrenel ]
+> Messages: 1127Mb/sec @ 184591 msgs/sec. | error rate 0.00%
+> Batches: 369.18 batches/sec. | 51.399ms p99 | 15.814ms HMean | 4.45ms Min | 80.708ms Max
+   4.45ms - 12.076ms ----------------------------------------
+ 12.076ms - 19.702ms --------------------------------------------------
+ 19.702ms - 27.328ms --------------------------------------------
+ 27.328ms - 34.953ms -----------------------
+ 34.953ms - 42.579ms ------------
+ 42.579ms - 50.205ms -----
+ 50.205ms - 57.831ms --
+ 57.831ms - 65.456ms -
+ 65.456ms - 73.082ms -
+ 73.082ms - 80.708ms -
 
 
-2017/06/23 11:35:36 [ topic: sangrenel ]
-> Messages: 906Mb/sec @ 148428 msgs/sec. | error rate 0.00%
-> Batches: 296.86 batches/sec. | 11.51ms p99 | 4.37ms HMean | 2.633ms Min | 13.922ms Max
-   2.633ms - 3.762ms -------------
-   3.762ms - 4.891ms -------------------------
-    4.891ms - 6.02ms -----------
-    6.02ms - 7.148ms ---
-   7.148ms - 8.277ms -
-   8.277ms - 9.406ms -
-  9.406ms - 10.535ms -
- 10.535ms - 11.664ms -
- 11.664ms - 12.793ms -
- 12.793ms - 13.922ms -
+2017/06/23 12:21:03 [ topic: sangrenel ]
+> Messages: 1055Mb/sec @ 172905 msgs/sec. | error rate 0.00%
+> Batches: 345.81 batches/sec. | 64.309ms p99 | 16.061ms HMean | 4.678ms Min | 85.51ms Max
+  4.678ms - 12.761ms ------------------------------------------
+ 12.761ms - 20.844ms --------------------------------------------------
+ 20.844ms - 28.927ms ---------------------------------------
+ 28.927ms - 37.011ms --------------------
+ 37.011ms - 45.094ms -----------
+ 45.094ms - 53.177ms -----
+  53.177ms - 61.26ms --
+  61.26ms - 69.344ms --
+ 69.344ms - 77.427ms -
+  77.427ms - 85.51ms -
+
+
+2017/06/23 12:21:08 [ topic: sangrenel ]
+> Messages: 1059Mb/sec @ 173562 msgs/sec. | error rate 0.00%
+> Batches: 347.12 batches/sec. | 57.905ms p99 | 16.407ms HMean | 4.826ms Min | 104.25ms Max
+  4.826ms - 14.768ms ------------------------------------------------
+ 14.768ms - 24.711ms --------------------------------------------------
+ 24.711ms - 34.653ms -----------------------------------
+ 34.653ms - 44.596ms --------------
+ 44.596ms - 54.538ms ------
+  54.538ms - 64.48ms --
+  64.48ms - 74.423ms -
+ 74.423ms - 84.365ms -
+ 84.365ms - 94.308ms -
 </pre>
 
 ### Installation
