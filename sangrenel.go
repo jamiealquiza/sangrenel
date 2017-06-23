@@ -147,15 +147,16 @@ func main() {
 		// Write output stats.
 		fmt.Println()
 		log.Printf("[ topic: %s ]\n", Config.topic)
-		fmt.Printf("> Producing %s @ %.0f msgs/sec. | %.2fms p99 batch write | error rate %.2f%%\n",
+		fmt.Printf("> Messages: %s @ %.0f msgs/sec. | error rate %.2f%%\n",
 			outputString,
 			metrics["rate"],
-			metrics["p99"],
 			metrics["error_rate"])
 
 		if !Config.noop {
-			fmt.Printf("> Batch Statistics, Last %.1fs:\n", intervalTime)
-			stats.Dump()
+			fmt.Printf("> Batches: %s p99 | %s HMean | %s Min | %s Max\n",
+				round(stats.Time.P99), round(stats.Time.HMean), round(stats.Time.Min), round(stats.Time.Max))
+
+			fmt.Println(stats.Histogram.String(25))
 
 			// Check if the tacymeter size needs to be increased
 			// to avoid sampling. Otherwise, just reset it.
@@ -335,4 +336,8 @@ func calcOutput(t float64, n uint64) (float64, string) {
 		o = strconv.FormatFloat(m/1024, 'f', 0, 64) + "KB/sec"
 	}
 	return m, o
+}
+
+func round(t time.Duration) time.Duration {
+	return t/1000*1000
 }
