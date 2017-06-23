@@ -281,8 +281,7 @@ func writer(c sarama.Client, t *tachymeter.Tachymeter) {
 
 			// Break if the global rate limit was met, or, if
 			// we'd exceed it assuming all writers wrote a max batch size
-			// for this interval. This is conditionally ran at the beginning
-			// or the end of the interval depending on worker concurrency.
+			// for this interval.
 			sendEstimate := intervalSent + uint64((Config.batchSize*Config.workers*Config.writersPerWorker)-Config.writersPerWorker)
 			if sendEstimate >= Config.msgRate {
 				break
