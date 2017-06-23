@@ -71,49 +71,51 @@ If optionally defined, some metric data can be written to Graphite. More/better 
 Starting 1 client workers, 5 writers per worker
 Message size 800 bytes, 500 message limit per batch
 Compression: none, RequiredAcks: local
-2017/06/23 11:25:11 worker_1 connected
+2017/06/23 11:35:21 worker_1 connected
 
-2017/06/23 11:25:16 [ topic: sangrenel ]
-> Messages: 915Mb/sec @ 149895 msgs/sec. | error rate 0.00%
-> Batches: 8.938ms p99 | 4.223ms HMean | 2.553ms Min | 16.687ms Max
-   2.553ms - 3.966ms -----------------------
-    3.966ms - 5.38ms -------------------------
-    5.38ms - 6.793ms --------
-   6.793ms - 8.207ms --
-    8.207ms - 9.62ms -
-   9.62ms - 11.033ms -
- 11.033ms - 12.447ms -
-  12.447ms - 13.86ms -
-
-
-2017/06/23 11:25:21 [ topic: sangrenel ]
-> Messages: 884Mb/sec @ 144867 msgs/sec. | error rate 0.00%
-> Batches: 10.01ms p99 | 4.364ms HMean | 2.765ms Min | 14.106ms Max
-   2.765ms - 3.899ms -----------------
-   3.899ms - 5.033ms -------------------------
-   5.033ms - 6.167ms ----------
-   6.167ms - 7.301ms ---
-   7.301ms - 8.435ms -
-   8.435ms - 9.569ms -
-  9.569ms - 10.703ms -
- 10.703ms - 11.837ms -
- 11.837ms - 12.971ms -
- 12.971ms - 14.106ms -
+2017/06/23 11:35:26 [ topic: sangrenel ]
+> Messages: 967Mb/sec @ 158377 msgs/sec. | error rate 0.00%
+> Batches: 316.75 batches/sec. | 8.178ms p99 | 3.962ms HMean | 2.481ms Min | 18.032ms Max
+   2.481ms - 4.036ms -------------------------
+   4.036ms - 5.591ms ----------------
+   5.591ms - 7.146ms ----
+   7.146ms - 8.701ms -
+  8.701ms - 10.256ms -
+ 10.256ms - 11.811ms -
+ 11.811ms - 13.367ms -
+ 13.367ms - 14.922ms -
+ 14.922ms - 16.477ms -
+ 16.477ms - 18.032ms -
 
 
-2017/06/23 11:25:26 [ topic: sangrenel ]
-> Messages: 859Mb/sec @ 140711 msgs/sec. | error rate 0.00%
-> Batches: 9.997ms p99 | 4.505ms HMean | 2.839ms Min | 23.689ms Max
-   2.839ms - 4.924ms -------------------------
-   4.924ms - 7.009ms -----------
-   7.009ms - 9.094ms --
-  9.094ms - 11.179ms -
- 11.179ms - 13.264ms -
- 13.264ms - 15.349ms -
- 15.349ms - 17.434ms -
- 17.434ms - 19.519ms -
- 19.519ms - 21.604ms -
- 21.604ms - 23.689ms -
+2017/06/23 11:35:31 [ topic: sangrenel ]
+> Messages: 992Mb/sec @ 162449 msgs/sec. | error rate 0.00%
+> Batches: 324.90 batches/sec. | 8.084ms p99 | 3.961ms HMean | 2.519ms Min | 10.52ms Max
+   2.519ms - 3.319ms -------------
+   3.319ms - 4.119ms -------------------------
+   4.119ms - 4.919ms ----------------
+   4.919ms - 5.719ms -------
+   5.719ms - 6.519ms ---
+   6.519ms - 7.319ms --
+   7.319ms - 8.119ms -
+   8.119ms - 8.919ms -
+   8.919ms - 9.719ms -
+   9.719ms - 10.52ms -
+
+
+2017/06/23 11:35:36 [ topic: sangrenel ]
+> Messages: 906Mb/sec @ 148428 msgs/sec. | error rate 0.00%
+> Batches: 296.86 batches/sec. | 11.51ms p99 | 4.37ms HMean | 2.633ms Min | 13.922ms Max
+   2.633ms - 3.762ms -------------
+   3.762ms - 4.891ms -------------------------
+    4.891ms - 6.02ms -----------
+    6.02ms - 7.148ms ---
+   7.148ms - 8.277ms -
+   8.277ms - 9.406ms -
+  9.406ms - 10.535ms -
+ 10.535ms - 11.664ms -
+ 11.664ms - 12.793ms -
+ 12.793ms - 13.922ms -
 </pre>
 
 ### Misc.

@@ -153,8 +153,8 @@ func main() {
 			metrics["error_rate"])
 
 		if !Config.noop {
-			fmt.Printf("> Batches: %s p99 | %s HMean | %s Min | %s Max\n",
-				round(stats.Time.P99), round(stats.Time.HMean), round(stats.Time.Min), round(stats.Time.Max))
+			fmt.Printf("> Batches: %.2f batches/sec. | %s p99 | %s HMean | %s Min | %s Max\n",
+				stats.Rate.Second, round(stats.Time.P99), round(stats.Time.HMean), round(stats.Time.Min), round(stats.Time.Max))
 
 			fmt.Println(stats.Histogram.String(25))
 
@@ -339,5 +339,5 @@ func calcOutput(t float64, n uint64) (float64, string) {
 }
 
 func round(t time.Duration) time.Duration {
-	return t/1000*1000
+	return t / 1000 * 1000
 }
