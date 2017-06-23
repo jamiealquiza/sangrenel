@@ -11,61 +11,9 @@ While using this tool, keep in mind that benchmarking is always an examination o
 
 ### Example
 
-Sangrenel takes [configurable](https://github.com/jamiealquiza/sangrenel#usage) message/batch sizing, concurrency and other settings and writes messages to a reference topic. Write latency, distribution, and throughput data is dumped every 5 seconds. 
+Sangrenel takes [configurable](https://github.com/jamiealquiza/sangrenel#usage) message/batch sizing, concurrency and other settings and writes messages to a reference topic. Message throughput, batch write latency (p99, harmonic mean, min, max) and a latency histogram are dumped every 5 seconds.
 
-<pre>
-% sangrenel -message-size=800 -message-batch-size=500 -workers=3                                              
-
-Starting 3 client workers, 5 writers per worker
-Message size 800 bytes, 500 message limit per batch
-Compression: none, RequiredAcks: local
-2017/06/23 12:20:53 worker_1 connected
-2017/06/23 12:20:53 worker_3 connected
-2017/06/23 12:20:53 worker_2 connected
-
-2017/06/23 12:20:58 [ topic: sangrenel ]
-> Messages: 1127Mb/sec @ 184591 msgs/sec. | error rate 0.00%
-> Batches: 369.18 batches/sec. | 51.399ms p99 | 15.814ms HMean | 4.45ms Min | 80.708ms Max
-   4.45ms - 12.076ms ----------------------------------------
- 12.076ms - 19.702ms --------------------------------------------------
- 19.702ms - 27.328ms --------------------------------------------
- 27.328ms - 34.953ms -----------------------
- 34.953ms - 42.579ms ------------
- 42.579ms - 50.205ms -----
- 50.205ms - 57.831ms --
- 57.831ms - 65.456ms -
- 65.456ms - 73.082ms -
- 73.082ms - 80.708ms -
-
-
-2017/06/23 12:21:03 [ topic: sangrenel ]
-> Messages: 1055Mb/sec @ 172905 msgs/sec. | error rate 0.00%
-> Batches: 345.81 batches/sec. | 64.309ms p99 | 16.061ms HMean | 4.678ms Min | 85.51ms Max
-  4.678ms - 12.761ms ------------------------------------------
- 12.761ms - 20.844ms --------------------------------------------------
- 20.844ms - 28.927ms ---------------------------------------
- 28.927ms - 37.011ms --------------------
- 37.011ms - 45.094ms -----------
- 45.094ms - 53.177ms -----
-  53.177ms - 61.26ms --
-  61.26ms - 69.344ms --
- 69.344ms - 77.427ms -
-  77.427ms - 85.51ms -
-
-
-2017/06/23 12:21:08 [ topic: sangrenel ]
-> Messages: 1059Mb/sec @ 173562 msgs/sec. | error rate 0.00%
-> Batches: 347.12 batches/sec. | 57.905ms p99 | 16.407ms HMean | 4.826ms Min | 104.25ms Max
-  4.826ms - 14.768ms ------------------------------------------------
- 14.768ms - 24.711ms --------------------------------------------------
- 24.711ms - 34.653ms -----------------------------------
- 34.653ms - 44.596ms --------------
- 44.596ms - 54.538ms ------
-  54.538ms - 64.48ms --
-  64.48ms - 74.423ms -
- 74.423ms - 84.365ms -
- 84.365ms - 94.308ms -
-</pre>
+![img_0856](https://user-images.githubusercontent.com/4108044/27497484-20821454-5818-11e7-81c9-9773597753d1.gif)
 
 ### Installation
 
