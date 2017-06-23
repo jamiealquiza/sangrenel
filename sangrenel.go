@@ -240,17 +240,9 @@ func writer(c sarama.Client, t *tachymeter.Tachymeter) {
 		countStart := atomic.LoadUint64(&sentCnt)
 
 		var sendTime time.Time
+		var intervalSent uint64
 
 		for {
-			// Break if the global rate limit was met, or, if
-			// we'd exceed it assuming all writers wrote a max batch size
-			// for this interval.
-			intervalSent := atomic.LoadUint64(&sentCnt) - countStart
-			sendEstimate := intervalSent + uint64(Config.batchSize*Config.workers*(Config.writersPerWorker-1))
-			if sendEstimate >= Config.msgRate {
-				break
-			}
-
 			// Estimate the batch size. This should shrink
 			// if we're near the rate limit. Estimated batch size =
 			// amount left to send for this interval / number of writers
@@ -282,6 +274,17 @@ func writer(c sarama.Client, t *tachymeter.Tachymeter) {
 			atomic.AddUint64(&sentCnt, uint64(len(msgBatch)))
 
 			msgBatch = msgBatch[:0]
+
+			intervalSent = atomic.LoadUint64(&sentCnt) - countStart
+
+			// Break if the global rate limit was met, or, if
+			// we'd exceed it assuming all writers wrote a max batch size
+			// for this interval. This is conditionally ran at the beginning
+			// or the end of the interval depending on worker concurrency.
+			sendEstimate := intervalSent + uint64((Config.batchSize*Config.workers*Config.writersPerWorker)-Config.writersPerWorker)
+			if sendEstimate >= Config.msgRate {
+				break
+			}
 		}
 
 		// If the global per-second rate limit was met,
