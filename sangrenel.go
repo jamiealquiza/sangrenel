@@ -47,7 +47,7 @@ func init() {
 	flag.StringVar(&Config.topic, "topic", "sangrenel", "Kafka topic to produce to")
 	flag.IntVar(&Config.msgSize, "message-size", 300, "Message size (bytes)")
 	flag.Uint64Var(&Config.msgRate, "produce-rate", 100000000, "Global write rate limit (messages/sec)")
-	flag.IntVar(&Config.batchSize, "message-batch-size", 1, "Messages per batch")
+	flag.IntVar(&Config.batchSize, "message-batch-size", 500, "Messages per batch")
 	flag.StringVar(&Config.compressionName, "compression", "none", "Message compression: none, gzip, snappy")
 	flag.StringVar(&Config.requiredAcksName, "required-acks", "local", "RequiredAcks config: none, local, all")
 	flag.BoolVar(&Config.noop, "noop", false, "Test message generation performance (does not connect to Kafka)")
