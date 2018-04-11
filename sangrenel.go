@@ -17,19 +17,21 @@ import (
 )
 
 type config struct {
-	brokers          []string
-	topic            string
-	msgSize          int
-	msgRate          uint64
-	batchSize        int
-	compression      sarama.CompressionCodec
-	compressionName  string
-	requiredAcks     sarama.RequiredAcks
-	requiredAcksName string
-	workers          int
-	writersPerWorker int
-	noop             bool
-	interval         int
+	brokers            []string
+	topic              string
+	msgSize            int
+	msgRate            uint64
+	batchSize          int
+	compression        sarama.CompressionCodec
+	compressionName    string
+	requiredAcks       sarama.RequiredAcks
+	requiredAcksName   string
+	workers            int
+	writersPerWorker   int
+	noop               bool
+	interval           int
+	kafkaVersion       sarama.KafkaVersion
+	kafkaVersionString string
 }
 
 var (
@@ -55,6 +57,7 @@ func init() {
 	flag.IntVar(&Config.writersPerWorker, "writers-per-worker", 5, "Number of writer (Kafka producer) goroutines per worker")
 	brokerString := flag.String("brokers", "localhost:9092", "Comma delimited list of Kafka brokers")
 	flag.IntVar(&Config.interval, "interval", 5, "Statistics output interval (seconds)")
+	flag.StringVar(&Config.kafkaVersionString, "api-version", "", "Explicit sarama.Version string")
 	flag.Parse()
 
 	Config.brokers = strings.Split(*brokerString, ",")
@@ -82,6 +85,35 @@ func init() {
 		fmt.Printf("Invalid required-acks option: %s\n", Config.requiredAcksName)
 		os.Exit(1)
 	}
+
+	switch Config.kafkaVersionString {
+	case "":
+	case "0.8.2.0":
+		Config.kafkaVersion = sarama.V0_8_2_0
+	case "0.8.2.1":
+		Config.kafkaVersion = sarama.V0_8_2_1
+	case "0.8.2.2":
+		Config.kafkaVersion = sarama.V0_8_2_2
+	case "0.9.0.0":
+		Config.kafkaVersion = sarama.V0_9_0_0
+	case "0.9.0.1":
+		Config.kafkaVersion = sarama.V0_9_0_1
+	case "0.10.0.0":
+		Config.kafkaVersion = sarama.V0_10_0_0
+	case "0.10.0.1":
+		Config.kafkaVersion = sarama.V0_10_0_1
+	case "0.10.1.0":
+		Config.kafkaVersion = sarama.V0_10_1_0
+	case "0.10.2.0":
+		Config.kafkaVersion = sarama.V0_10_2_0
+	case "0.11.0.0":
+		Config.kafkaVersion = sarama.V0_11_0_0
+	case "1.0.0.0":
+		Config.kafkaVersion = sarama.V1_0_0_0
+	default:
+		fmt.Printf("Invalid api-version option: %s\n", Config.kafkaVersionString)
+		os.Exit(1)
+	}
 }
 
 func main() {
@@ -89,11 +121,16 @@ func main() {
 		go graphiteWriter()
 	}
 
+	version := Config.kafkaVersionString
+	if version == "" {
+		version = "automatic"
+	}
+
 	// Print Sangrenel startup info.
 	fmt.Printf("\nStarting %d client workers, %d writers per worker\n", Config.workers, Config.writersPerWorker)
 	fmt.Printf("Message size %d bytes, %d message limit per batch\n", Config.msgSize, Config.batchSize)
-	fmt.Printf("Compression: %s, RequiredAcks: %s\n",
-		Config.compressionName, Config.requiredAcksName)
+	fmt.Printf("API Version: %s, Compression: %s, RequiredAcks: %s\n",
+		version, Config.compressionName, Config.requiredAcksName)
 
 	t := tachymeter.New(&tachymeter.Config{Size: 300000, Safe: true})
 
@@ -192,6 +229,7 @@ func worker(n int, t *tachymeter.Tachymeter) {
 		conf.Producer.RequiredAcks = Config.requiredAcks
 		conf.Producer.Flush.MaxMessages = Config.batchSize
 		conf.Producer.MaxMessageBytes = Config.msgSize + 50
+		conf.Version = Config.kafkaVersion
 
 		client, err := sarama.NewClient(Config.brokers, conf)
 		if err != nil {
