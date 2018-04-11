@@ -29,34 +29,36 @@ Binary will be found at `$GOPATH/bin/sangrenel`
 Usage output:
 <pre>
 Usage of sangrenel:
+  -api-version string
+    	Explicit sarama.Version string
   -brokers string
-        Comma delimited list of Kafka brokers (default "localhost:9092")
+    	Comma delimited list of Kafka brokers (default "localhost:9092")
   -compression string
-        Message compression: none, gzip, snappy (default "none")
+    	Message compression: none, gzip, snappy (default "none")
   -graphite-ip string
-        Destination Graphite IP address
+    	Destination Graphite IP address
   -graphite-metrics-prefix string
-        Top-level Graphite namespace prefix (defaults to hostname) (default "mbp.local")
+    	Top-level Graphite namespace prefix (defaults to hostname) (default "ja.local")
   -graphite-port string
-        Destination Graphite plaintext port
+    	Destination Graphite plaintext port
   -interval int
-        Statistics output interval (seconds) (default 5)
+    	Statistics output interval (seconds) (default 5)
   -message-batch-size int
-        Messages per batch (default 1)
+    	Messages per batch (default 500)
   -message-size int
-        Message size (bytes) (default 300)
+    	Message size (bytes) (default 300)
   -noop
-        Test message generation performance (does not connect to Kafka)
+    	Test message generation performance (does not connect to Kafka)
   -produce-rate uint
-        Global write rate limit (messages/sec) (default 100000000)
+    	Global write rate limit (messages/sec) (default 100000000)
   -required-acks string
-        RequiredAcks config: none, local, all (default "local")
+    	RequiredAcks config: none, local, all (default "local")
   -topic string
-        Kafka topic to produce to (default "sangrenel")
+    	Kafka topic to produce to (default "sangrenel")
   -workers int
-        Number of workers (default 1)
+    	Number of workers (default 1)
   -writers-per-worker int
-        Number of writer (Kafka producer) goroutines per worker (default 5)
+    	Number of writer (Kafka producer) goroutines per worker (default 5)
 </pre>
 
 Sangrenel uses the Kafka client library [Sarama](https://github.com/Shopify/sarama). Sangrenel starts one or more workers, each of which instantiate a unique Kafka client connection to the target cluster. Each worker has a number of writers which generate and send message data to Kafka, sharing the parent worker client connection. The number of workers is configurable via the `-workers` flag, the number of writers per worker via the `-writers-per-worker`. This is done for scaling purposes; while a single Sarama client can be used for multiple writers (which live in separate goroutines), performance begins to flatline at some point. It's best to leave the writers-per-worker at the default 5 and scaling the worker count as needed, but the option is exposed for more control. Left as a technical exercise for the user, there's a different between 2 workers with 5 writers each and 1 worker with 10 writers.
