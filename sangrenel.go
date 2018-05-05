@@ -199,7 +199,7 @@ func main() {
 
 			if Config.output == "graph" {
 				// output as graph
-				fmt.Println(stats.WriteHTML("."))
+				stats.WriteHTML(".")
 			}else if Config.output == "metrics" {
 				// output results as pre-format metrics
 				fmt.Println(stats.String())
