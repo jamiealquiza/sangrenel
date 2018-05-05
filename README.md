@@ -72,3 +72,6 @@ Two important factors to note:
 Once running, Sangrenel generates and writes messages as fast as possible (or to the configured `-produce-rate`). Every 5 seconds, message throughput, rates, latency and other metrics (via [tachymeter](https://github.com/tony2011/tachymeter)) are printed to console.
 
 If optionally defined, some metric data can be written to Graphite. Better metric output options will be added soon.
+
+### Debug
+-api-version=0.10.1.0 -brokers=localhost:9092  -interval=5 -message-batch-size=10 -message-size=4096 -noop=false -produce-rate=100000000 -required-acks=local -topic=perf-test-3 -workers=1 -writers-per-worker=1
