@@ -32,6 +32,7 @@ type config struct {
 	interval           int
 	kafkaVersion       sarama.KafkaVersion
 	kafkaVersionString string
+	output             string
 }
 
 var (
@@ -58,6 +59,7 @@ func init() {
 	brokerString := flag.String("brokers", "localhost:9092", "Comma delimited list of Kafka brokers")
 	flag.IntVar(&Config.interval, "interval", 5, "Statistics output interval (seconds)")
 	flag.StringVar(&Config.kafkaVersionString, "api-version", "", "Explicit sarama.Version string")
+	flag.StringVar(&Config.output, "output-format", "text", "The output format: text, metrics, graph (default text)")
 	flag.Parse()
 
 	Config.brokers = strings.Split(*brokerString, ",")
@@ -195,7 +197,16 @@ func main() {
 			fmt.Printf("> Batches: %.2f batches/sec. | %s p99 | %s HMean | %s Min | %s Max\n",
 				stats.Rate.Second, round(stats.Time.P99), round(stats.Time.HMean), round(stats.Time.Min), round(stats.Time.Max))
 
-			fmt.Println(stats.Histogram.String(50))
+			if Config.output == "graph" {
+				// output as graph
+				fmt.Println(stats.WriteHTML("."))
+			}else if Config.output == "metrics" {
+				// output results as pre-format metrics
+				fmt.Println(stats.String())
+			} else {
+				// output results as string
+				fmt.Println(stats.Histogram.String(50))
+			}
 
 			// Check if the tacymeter size needs to be increased
 			// to avoid sampling. Otherwise, just reset it.

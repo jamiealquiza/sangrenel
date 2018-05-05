@@ -59,6 +59,8 @@ Usage of sangrenel:
     	Number of workers (default 1)
   -writers-per-worker int
     	Number of writer (Kafka producer) goroutines per worker (default 5)
+  -output string
+      	the output format: text, metrics, graph (default text)
 </pre>
 
 Sangrenel uses the Kafka client library [Sarama](https://github.com/Shopify/sarama). Sangrenel starts one or more workers, each of which instantiate a unique Kafka client connection to the target cluster. Each worker has a number of writers which generate and send message data to Kafka, sharing the parent worker client connection. The number of workers is configurable via the `-workers` flag, the number of writers per worker via the `-writers-per-worker`. This is done for scaling purposes; while a single Sarama client can be used for multiple writers (which live in separate goroutines), performance begins to flatline at some point. It's best to leave the writers-per-worker at the default 5 and scaling the worker count as needed, but the option is exposed for more control. Left as a technical exercise for the user, there's a different between 2 workers with 5 writers each and 1 worker with 10 writers.
@@ -75,3 +77,6 @@ If optionally defined, some metric data can be written to Graphite. Better metri
 
 ### Debug
 -api-version=0.10.1.0 -brokers=localhost:9092  -interval=5 -message-batch-size=10 -message-size=4096 -noop=false -produce-rate=100000000 -required-acks=local -topic=perf-test-3 -workers=1 -writers-per-worker=1
+
+### Example
+sangrenel -api-version=0.10.1.0 -brokers=localhost:9092  -interval=5 -message-batch-size=10 -message-size=4096 -noop=false -produce-rate=100000000 -required-acks=local -topic=perf-test-3 -workers=1 -writers-per-worker=1 -output-format=metrics
