@@ -12,7 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/jamiealquiza/tachymeter"
+	"github.com/tony2011/tachymeter"
 	"gopkg.in/Shopify/sarama.v1"
 )
 
