@@ -33,6 +33,7 @@ type config struct {
 	kafkaVersion       sarama.KafkaVersion
 	kafkaVersionString string
 	output             string
+	runTimes       	   int
 }
 
 var (
@@ -60,6 +61,7 @@ func init() {
 	flag.IntVar(&Config.interval, "interval", 5, "Statistics output interval (seconds)")
 	flag.StringVar(&Config.kafkaVersionString, "api-version", "", "Explicit sarama.Version string")
 	flag.StringVar(&Config.output, "output-format", "text", "The output format: text, metrics, graph (default text)")
+	flag.IntVar(&Config.runTimes, "run-times", 10, "The required running times.")
 	flag.Parse()
 
 	Config.brokers = strings.Split(*brokerString, ",")
@@ -119,6 +121,7 @@ func init() {
 }
 
 func main() {
+	// Graphite configure in needed, launch a graphite thread.
 	if graphiteIp != "" {
 		go graphiteWriter()
 	}
@@ -134,16 +137,19 @@ func main() {
 	fmt.Printf("API Version: %s, Compression: %s, RequiredAcks: %s\n",
 		version, Config.compressionName, Config.requiredAcksName)
 
+	// Create meter
 	t := tachymeter.New(&tachymeter.Config{Size: 300000, Safe: true})
 
 	// Start client workers.
 	for i := 0; i < Config.workers; i++ {
+		// launch a thread for each worker
 		go worker(i+1, t)
 	}
 
 	var currSentCnt, lastSentCnt uint64
 	var currErrCnt, lastErrCnt uint64
 
+	// metrics count by 5 seconds
 	interval := time.Duration(Config.interval) * time.Second
 	ticker := time.Tick(interval)
 	start := time.Now()
@@ -194,8 +200,8 @@ func main() {
 			metrics["error_rate"])
 
 		if !Config.noop {
-			fmt.Printf("> Batches: %.2f batches/sec. | %s p99 | %s HMean | %s Min | %s Max\n",
-				stats.Rate.Second, round(stats.Time.P99), round(stats.Time.HMean), round(stats.Time.Min), round(stats.Time.Max))
+			fmt.Printf("> Batches: %.2f batches/sec | %d messages / batch | %s p99 | %s HMean | %s Min | %s Max\n",
+				stats.Rate.Second, Config.batchSize, round(stats.Time.P99), round(stats.Time.HMean), round(stats.Time.Min), round(stats.Time.Max))
 
 			if Config.output == "graph" {
 				// output as graph
@@ -281,14 +287,17 @@ func writer(c sarama.Client, t *tachymeter.Tachymeter) {
 	source := rand.NewSource(time.Now().UnixNano())
 	generator := rand.New(source)
 	msgBatch := make([]*sarama.ProducerMessage, 0, Config.batchSize)
+	roundCounter := int(1)
 
 	for {
 		// Message rate limiting works by having all writer loops incrementing
 		// a global counter and tracking the aggregate per-second progress.
 		// If the configured rate is met, the worker will sleep
 		// for the remainder of the 1 second window.
-		intervalEnd := time.Now().Add(time.Second)
+		//intervalEnd := time.Now().Add(time.Second)
+		writerStartTime := time.Now().Unix()
 		countStart := atomic.LoadUint64(&sentCnt)
+		//startTime := time.Now().Unix()
 
 		var sendTime time.Time
 		var intervalSent uint64
@@ -312,8 +321,8 @@ func writer(c sarama.Client, t *tachymeter.Tachymeter) {
 				msgBatch = append(msgBatch, msg)
 			}
 
-			sendTime = time.Now()
 			err = producer.SendMessages(msgBatch)
+
 			if err != nil {
 				// Sarama returns a ProducerErrors, which is a slice
 				// of errors per message errored. Use this count
@@ -331,15 +340,22 @@ func writer(c sarama.Client, t *tachymeter.Tachymeter) {
 			// Break if the global rate limit was met, or, if
 			// we'd exceed it assuming all writers wrote a max batch size
 			// for this interval.
-			sendEstimate := intervalSent + uint64((Config.batchSize*Config.workers*Config.writersPerWorker)-Config.writersPerWorker)
-			if sendEstimate >= Config.msgRate {
+			//sendEstimate := intervalSent + uint64((Config.batchSize*Config.workers*Config.writersPerWorker)-Config.writersPerWorker)
+			//sendEstimate := intervalSent + uint64((Config.batchSize*Config.workers*Config.writersPerWorker)-Config.writersPerWorker)
+			if intervalSent >= Config.msgRate {
+				fmt.Printf("the round %d : %d messages have been successfully sent to remote %s. \n ", roundCounter, intervalSent, Config.brokers)
 				break
 			}
 		}
 
 		// If the global per-second rate limit was met,
 		// the inner loop breaks and the outer loop sleeps for the interval remainder.
-		time.Sleep(intervalEnd.Sub(time.Now()))
+		if roundCounter == Config.runTimes {
+			fmt.Printf("%d rounds, %d messages sent to broker in %d seconds. \n ", roundCounter, int(intervalSent) * Config.runTimes, time.Now().Unix() - writerStartTime)
+			roundCounter = int(1)
+		}
+
+		roundCounter = roundCounter + 1
 	}
 }
 
