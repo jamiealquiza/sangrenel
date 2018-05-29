@@ -88,6 +88,7 @@ func init() {
 
 	switch Config.kafkaVersionString {
 	case "":
+		fallthrough
 	case "0.8.2.0":
 		Config.kafkaVersion = sarama.V0_8_2_0
 	case "0.8.2.1":
