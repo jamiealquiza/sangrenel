@@ -21,6 +21,7 @@ type config struct {
 	topic              string
 	msgSize            int
 	msgRate            uint64
+	msgData			   string
 	batchSize          int
 	compression        sarama.CompressionCodec
 	compressionName    string
@@ -47,7 +48,8 @@ var (
 
 func init() {
 	flag.StringVar(&Config.topic, "topic", "sangrenel", "Kafka topic to produce to")
-	flag.IntVar(&Config.msgSize, "message-size", 300, "Message size (bytes)")
+	flag.IntVar(&Config.msgSize, "message-size", 300, "Message size (bytes): size of the random generated message")
+	flag.StringVar(&Config.msgData, "message-data", "", "Message data: message to be sent. If this parameter is defined, it will override the message-size")
 	flag.Uint64Var(&Config.msgRate, "produce-rate", 100000000, "Global write rate limit (messages/sec)")
 	flag.IntVar(&Config.batchSize, "message-batch-size", 500, "Messages per batch")
 	flag.StringVar(&Config.compressionName, "compression", "none", "Message compression: none, gzip, snappy")
@@ -268,6 +270,7 @@ func writer(c sarama.Client, t *tachymeter.Tachymeter) {
 	}
 	defer producer.Close()
 
+	var msgData []byte
 	source := rand.NewSource(time.Now().UnixNano())
 	generator := rand.New(source)
 	msgBatch := make([]*sarama.ProducerMessage, 0, Config.batchSize)
@@ -295,8 +298,7 @@ func writer(c sarama.Client, t *tachymeter.Tachymeter) {
 
 			for i := 0; i < n; i++ {
 				// Gen message.
-				msgData := make([]byte, Config.msgSize)
-				randMsg(msgData, *generator)
+				msgData = getMessageToSend(*generator)
 				msg := &sarama.ProducerMessage{Topic: Config.topic, Value: sarama.ByteEncoder(msgData)}
 				// Append to batch.
 				msgBatch = append(msgBatch, msg)
@@ -338,15 +340,14 @@ func writer(c sarama.Client, t *tachymeter.Tachymeter) {
 // but doesn't connect to / attempt to send anything to Kafka. This is used
 // purely for testing message generation performance.
 func dummyWriter(t *tachymeter.Tachymeter) {
+	var msgData []byte
 	source := rand.NewSource(time.Now().UnixNano())
 	generator := rand.New(source)
 	msgBatch := make([]*sarama.ProducerMessage, 0, Config.batchSize)
 
 	for {
 		for i := 0; i < Config.batchSize; i++ {
-			// Gen message.
-			msgData := make([]byte, Config.msgSize)
-			randMsg(msgData, *generator)
+			msgData = getMessageToSend(*generator)
 			msg := &sarama.ProducerMessage{Topic: Config.topic, Value: sarama.ByteEncoder(msgData)}
 			// Append to batch.
 			msgBatch = append(msgBatch, msg)
@@ -359,12 +360,22 @@ func dummyWriter(t *tachymeter.Tachymeter) {
 	}
 }
 
-// randMsg returns a random message generated from the chars byte slice.
-// Message length of m bytes as defined by Config.msgSize.
-func randMsg(m []byte, generator rand.Rand) {
-	for i := range m {
-		m[i] = chars[generator.Intn(len(chars))]
+func getMessageToSend(generator rand.Rand) []byte {
+	if Config.msgData != "" {
+		return []byte(Config.msgData)
+	} else {
+		return randMsg(generator)
 	}
+}
+
+// randMsg returns a random message generated from the chars byte slice.
+// Message length of msgData bytes as defined by Config.msgSize.
+func randMsg(generator rand.Rand) []byte {
+	msgData := make([]byte, Config.msgSize)
+	for i := range msgData {
+		msgData[i] = chars[generator.Intn(len(chars))]
+	}
+	return msgData
 }
 
 // calcOutput takes a duration t and messages sent
