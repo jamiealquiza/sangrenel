@@ -16,12 +16,15 @@ import (
 	"gopkg.in/Shopify/sarama.v1"
 )
 
+type stringArray []string
+
 type config struct {
 	brokers            []string
 	topic              string
 	msgSize            int
 	msgRate            uint64
-	msgData			   string
+	messagesData       stringArray
+	msgDataCounter     int
 	batchSize          int
 	compression        sarama.CompressionCodec
 	compressionName    string
@@ -46,10 +49,20 @@ var (
 	errCnt  uint64
 )
 
+func (i *stringArray) String() string {
+	return "my string representation"
+}
+
+func (i *stringArray) Set(value string) error {
+	*i = append(*i, value)
+	return nil
+}
+
+
 func init() {
 	flag.StringVar(&Config.topic, "topic", "sangrenel", "Kafka topic to produce to")
 	flag.IntVar(&Config.msgSize, "message-size", 300, "Message size (bytes): size of the random generated message")
-	flag.StringVar(&Config.msgData, "message-data", "", "Message data: message to be sent. If this parameter is defined, it will override the message-size")
+	flag.Var(&Config.messagesData, "messages-data", "Messages data: messages to be sent. Can be repeated as needed. If this parameter is defined, it will override the message-size")
 	flag.Uint64Var(&Config.msgRate, "produce-rate", 100000000, "Global write rate limit (messages/sec)")
 	flag.IntVar(&Config.batchSize, "message-batch-size", 500, "Messages per batch")
 	flag.StringVar(&Config.compressionName, "compression", "none", "Message compression: none, gzip, snappy")
@@ -361,8 +374,15 @@ func dummyWriter(t *tachymeter.Tachymeter) {
 }
 
 func getMessageToSend(generator rand.Rand) []byte {
-	if Config.msgData != "" {
-		return []byte(Config.msgData)
+	if len(Config.messagesData) > 0 {
+		result := []byte(Config.messagesData[Config.msgDataCounter])
+
+		if Config.msgDataCounter + 1 >= len(Config.messagesData) {
+			Config.msgDataCounter = 0
+		} else {
+			Config.msgDataCounter = Config.msgDataCounter + 1
+		}
+		return result
 	} else {
 		return randMsg(generator)
 	}
