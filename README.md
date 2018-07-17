@@ -11,9 +11,13 @@ While using this tool, keep in mind that benchmarking is always an examination o
 
 ### Example
 
+#### With random messages
 Sangrenel takes [configurable](https://github.com/jamiealquiza/sangrenel#usage) message/batch sizing, concurrency and other settings and writes messages to a reference topic. Message throughput, batch write latency (p99, harmonic mean, min, max) and a latency histogram are dumped every 5 seconds.
 
 ![img_0856](https://user-images.githubusercontent.com/4108044/27497484-20821454-5818-11e7-81c9-9773597753d1.gif)
+
+#### With concrete messages
+`sangrenel -topic test --interval 30 -produce-rate 10 --messages-data "{\"field1\":{\"field2\":\"value\"}}" -messages-data "{\"field3\":\"value2\"}"`
 
 ### Installation
 
@@ -47,8 +51,8 @@ Usage of sangrenel:
     	Messages per batch (default 500)
   -message-size int
     	Message size (bytes) (default 300)
-  -message-data string
-      Concrete message to be sent. If this parameter is defined, it overrides the randomly generated one (based on the message-size)
+  -messages-data string
+      Concrete message to be sent. If this parameter is defined, it overrides the randomly generated one (based on the message-size). This parameter can be repeated as many time as needed. The messages will be sent in a round robin fashion.
   -noop
     	Test message generation performance (does not connect to Kafka)
   -produce-rate uint
@@ -65,7 +69,7 @@ Usage of sangrenel:
 
 Sangrenel uses the Kafka client library [Sarama](https://github.com/Shopify/sarama). Sangrenel starts one or more workers, each of which instantiate a unique Kafka client connection to the target cluster. Each worker has a number of writers which generate and send message data to Kafka, sharing the parent worker client connection. The number of workers is configurable via the `-workers` flag, the number of writers per worker via the `-writers-per-worker`. This is done for scaling purposes; while a single Sarama client can be used for multiple writers (which live in separate goroutines), performance begins to flatline at some point. It's best to leave the writers-per-worker at the default 5 and scaling the worker count as needed, but the option is exposed for more control. Left as a technical exercise for the user, there's a different between 2 workers with 5 writers each and 1 worker with 10 writers.
 
-The `-topic` flag specifies which topic is used, allowing configs such as parition count and replication factor to be prepared ahead of time for performance comparisons (by switching which topic Sangrenel is using). The `-message-batch-size`, `-message-size`, `-message-data` and `-produce-rate` flags can be used to dictate number of messages to batch per write, message size, concrete message to send, and the total Sangrenel write rate. `-required-acks` sets the Sarama [RequiredAcks](https://godoc.org/github.com/Shopify/sarama#RequiredAcks) config. The `-api-version` flag allows Sarama to be configured at a specific API level (See the `version` field of the Sarama [Config](https://godoc.org/github.com/Shopify/sarama#Config) struct). The supported API versions are: "0.8.2.0", "0.8.2.1", "0.8.2.2", "0.9.0.0", "0.9.0.1", "0.10.0.0", "0.10.0.1", "0.10.1.0", "0.10.2.0", "0.11.0.0", "1.0.0.0".
+The `-topic` flag specifies which topic is used, allowing configs such as parition count and replication factor to be prepared ahead of time for performance comparisons (by switching which topic Sangrenel is using). The `-message-batch-size`, `-message-size`, `-messages-data` and `-produce-rate` flags can be used to dictate number of messages to batch per write, message size, concrete messages to send, and the total Sangrenel write rate. `-required-acks` sets the Sarama [RequiredAcks](https://godoc.org/github.com/Shopify/sarama#RequiredAcks) config. The `-api-version` flag allows Sarama to be configured at a specific API level (See the `version` field of the Sarama [Config](https://godoc.org/github.com/Shopify/sarama#Config) struct). The supported API versions are: "0.8.2.0", "0.8.2.1", "0.8.2.2", "0.9.0.0", "0.9.0.1", "0.10.0.0", "0.10.0.1", "0.10.1.0", "0.10.2.0", "0.11.0.0", "1.0.0.0".
 
 Two important factors to note:
 - Sangrenel uses Sarama's [SyncProducer](https://godoc.org/github.com/Shopify/sarama#SyncProducer), meaning messages are written synchronously
