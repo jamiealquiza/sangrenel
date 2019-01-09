@@ -1,8 +1,11 @@
 package main
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"math"
 	"math/rand"
@@ -32,6 +35,8 @@ type config struct {
 	interval           int
 	kafkaVersion       sarama.KafkaVersion
 	kafkaVersionString string
+	tls                bool
+	tlsCaCertificate   string
 }
 
 var (
@@ -58,6 +63,8 @@ func init() {
 	brokerString := flag.String("brokers", "localhost:9092", "Comma delimited list of Kafka brokers")
 	flag.IntVar(&Config.interval, "interval", 5, "Statistics output interval (seconds)")
 	flag.StringVar(&Config.kafkaVersionString, "api-version", "", "Explicit sarama.Version string")
+	flag.BoolVar(&Config.tls, "tls", false, "Whether to enable TLS communcation")
+	flag.StringVar(&Config.tlsCaCertificate, "tls-ca-cert", "", "Path to the CA SSL certificate")
 	flag.Parse()
 
 	Config.brokers = strings.Split(*brokerString, ",")
@@ -231,6 +238,24 @@ func worker(n int, t *tachymeter.Tachymeter) {
 		conf.Producer.Flush.MaxMessages = Config.batchSize
 		conf.Producer.MaxMessageBytes = Config.msgSize + 50
 		conf.Version = Config.kafkaVersion
+
+		if Config.tls {
+			caCert, err := ioutil.ReadFile(Config.tlsCaCertificate)
+			if err != nil {
+				log.Println(err)
+				os.Exit(1)
+			}
+
+			caCertPool := x509.NewCertPool()
+			caCertPool.AppendCertsFromPEM(caCert)
+
+			tlsConfig := &tls.Config{
+				RootCAs:            caCertPool,
+				InsecureSkipVerify: false,
+			}
+			conf.Net.TLS.Enable = true
+			conf.Net.TLS.Config = tlsConfig
+		}
 
 		client, err := sarama.NewClient(Config.brokers, conf)
 		if err != nil {
