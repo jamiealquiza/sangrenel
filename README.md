@@ -53,6 +53,10 @@ Usage of sangrenel:
     	Global write rate limit (messages/sec) (default 100000000)
   -required-acks string
     	RequiredAcks config: none, local, all (default "local")
+  -tls
+      Whether to enable TLS communcation (default "false")
+  -tls-ca-cert string
+      Path to the CA SSL certificate
   -topic string
     	Kafka topic to produce to (default "sangrenel")
   -workers int
