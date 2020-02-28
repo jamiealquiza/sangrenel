@@ -48,6 +48,20 @@ var (
 	// Counters / misc.
 	sentCnt uint64
 	errCnt  uint64
+
+	validVersions = []string{
+		"0.8.2.0",
+		"0.8.2.1",
+		"0.8.2.2",
+		"0.9.0.0",
+		"0.9.0.1",
+		"0.10.0.0",
+		"0.10.0.1",
+		"0.10.1.0",
+		"0.10.2.0",
+		"0.11.0.0",
+		"1.0.0.0",
+	}
 )
 
 func init() {
@@ -62,7 +76,7 @@ func init() {
 	flag.IntVar(&Config.writersPerWorker, "writers-per-worker", 5, "Number of writer (Kafka producer) goroutines per worker")
 	brokerString := flag.String("brokers", "localhost:9092", "Comma delimited list of Kafka brokers")
 	flag.IntVar(&Config.interval, "interval", 5, "Statistics output interval (seconds)")
-	flag.StringVar(&Config.kafkaVersionString, "api-version", "", "Explicit sarama.Version string")
+	flag.StringVar(&Config.kafkaVersionString, "api-version", "0.10.2.0", "Explicit sarama.Version string")
 	flag.BoolVar(&Config.tls, "tls", false, "Whether to enable TLS communcation")
 	flag.StringVar(&Config.tlsCaCertificate, "tls-ca-cert", "", "Path to the CA SSL certificate")
 	flag.Parse()
@@ -94,8 +108,6 @@ func init() {
 	}
 
 	switch Config.kafkaVersionString {
-	case "":
-		fallthrough
 	case "0.8.2.0":
 		Config.kafkaVersion = sarama.V0_8_2_0
 	case "0.8.2.1":
@@ -119,7 +131,8 @@ func init() {
 	case "1.0.0.0":
 		Config.kafkaVersion = sarama.V1_0_0_0
 	default:
-		fmt.Printf("Invalid api-version option: %s\n", Config.kafkaVersionString)
+		fmt.Printf("Invalid API version option: %s\n", Config.kafkaVersionString)
+		fmt.Printf("Options: %v\n", validVersions)
 		os.Exit(1)
 	}
 }
