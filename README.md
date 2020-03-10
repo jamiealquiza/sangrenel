@@ -57,6 +57,12 @@ Usage of sangrenel:
       Whether to enable TLS communcation (default "false")
   -tls-ca-cert string
       Path to the CA SSL certificate
+  -tls-cert-file string
+      Path to the certificate file
+  -tls-key-file string
+      Path to the private key file
+  -tls-insecure-skip-verify
+      TLS insecure skip verify (default false)
   -topic string
     	Kafka topic to produce to (default "sangrenel")
   -workers int
