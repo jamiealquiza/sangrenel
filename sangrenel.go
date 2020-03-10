@@ -20,23 +20,26 @@ import (
 )
 
 type config struct {
-	brokers            []string
-	topic              string
-	msgSize            int
-	msgRate            uint64
-	batchSize          int
-	compression        sarama.CompressionCodec
-	compressionName    string
-	requiredAcks       sarama.RequiredAcks
-	requiredAcksName   string
-	workers            int
-	writersPerWorker   int
-	noop               bool
-	interval           int
-	kafkaVersion       sarama.KafkaVersion
-	kafkaVersionString string
-	tls                bool
-	tlsCaCertificate   string
+	brokers               []string
+	topic                 string
+	msgSize               int
+	msgRate               uint64
+	batchSize             int
+	compression           sarama.CompressionCodec
+	compressionName       string
+	requiredAcks          sarama.RequiredAcks
+	requiredAcksName      string
+	workers               int
+	writersPerWorker      int
+	noop                  bool
+	interval              int
+	kafkaVersion          sarama.KafkaVersion
+	kafkaVersionString    string
+	tls                   bool
+	tlsCaCertificate      string
+	tlsCertificate        string
+	tlsPrivateKey         string
+	tlsInsecureSkipVerify bool
 }
 
 var (
@@ -79,6 +82,9 @@ func init() {
 	flag.StringVar(&Config.kafkaVersionString, "api-version", "0.10.2.0", "Explicit sarama.Version string")
 	flag.BoolVar(&Config.tls, "tls", false, "Whether to enable TLS communcation")
 	flag.StringVar(&Config.tlsCaCertificate, "tls-ca-cert", "", "Path to the CA SSL certificate")
+	flag.StringVar(&Config.tlsCertificate, "tls-cert-file", "", "Path to the certificate file")
+	flag.StringVar(&Config.tlsPrivateKey, "tls-key-file", "", "Path to the private key file")
+	flag.BoolVar(&Config.tlsInsecureSkipVerify, "tls-insecure-skip-verify", false, "TLS insecure skip verify")
 	flag.Parse()
 
 	Config.brokers = strings.Split(*brokerString, ",")
@@ -253,19 +259,30 @@ func worker(n int, t *tachymeter.Tachymeter) {
 		conf.Version = Config.kafkaVersion
 
 		if Config.tls {
-			caCert, err := ioutil.ReadFile(Config.tlsCaCertificate)
-			if err != nil {
-				log.Println(err)
-				os.Exit(1)
-			}
-
-			caCertPool := x509.NewCertPool()
-			caCertPool.AppendCertsFromPEM(caCert)
 
 			tlsConfig := &tls.Config{
-				RootCAs:            caCertPool,
-				InsecureSkipVerify: false,
+				InsecureSkipVerify: Config.tlsInsecureSkipVerify,
 			}
+
+			if len(Config.tlsCaCertificate) > 0 {
+				caCert, err := ioutil.ReadFile(Config.tlsCaCertificate)
+				if err != nil {
+					log.Println(err)
+					os.Exit(1)
+				}
+				caCertPool := x509.NewCertPool()
+				caCertPool.AppendCertsFromPEM(caCert)
+				tlsConfig.RootCAs = caCertPool
+			}
+
+			if len(Config.tlsCertificate) > 0 && len(Config.tlsPrivateKey) > 0 {
+				cert, err := tls.LoadX509KeyPair(Config.tlsCertificate, Config.tlsPrivateKey)
+				if err != nil {
+					log.Fatal(err)
+				}
+				tlsConfig.Certificates = []tls.Certificate{cert}
+			}
+
 			conf.Net.TLS.Enable = true
 			conf.Net.TLS.Config = tlsConfig
 		}
