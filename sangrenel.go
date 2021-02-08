@@ -15,8 +15,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Shopify/sarama"
 	"github.com/jamiealquiza/tachymeter"
-	"gopkg.in/Shopify/sarama.v1"
 )
 
 type config struct {
@@ -64,6 +64,17 @@ var (
 		"0.10.2.0",
 		"0.11.0.0",
 		"1.0.0.0",
+		"1.1.0.0",
+		"1.1.1.0",
+		"2.0.0.0",
+		"2.0.1.0",
+		"2.1.0.0",
+		"2.2.0.0",
+		"2.2.1.0",
+		"2.3.0.0",
+		"2.4.0.0",
+		"2.5.0.0",
+		"2.6.0.0",
 	}
 )
 
@@ -113,34 +124,16 @@ func init() {
 		os.Exit(1)
 	}
 
-	switch Config.kafkaVersionString {
-	case "0.8.2.0":
-		Config.kafkaVersion = sarama.V0_8_2_0
-	case "0.8.2.1":
-		Config.kafkaVersion = sarama.V0_8_2_1
-	case "0.8.2.2":
-		Config.kafkaVersion = sarama.V0_8_2_2
-	case "0.9.0.0":
-		Config.kafkaVersion = sarama.V0_9_0_0
-	case "0.9.0.1":
-		Config.kafkaVersion = sarama.V0_9_0_1
-	case "0.10.0.0":
-		Config.kafkaVersion = sarama.V0_10_0_0
-	case "0.10.0.1":
-		Config.kafkaVersion = sarama.V0_10_0_1
-	case "0.10.1.0":
-		Config.kafkaVersion = sarama.V0_10_1_0
-	case "0.10.2.0":
-		Config.kafkaVersion = sarama.V0_10_2_0
-	case "0.11.0.0":
-		Config.kafkaVersion = sarama.V0_11_0_0
-	case "1.0.0.0":
-		Config.kafkaVersion = sarama.V1_0_0_0
-	default:
+}
+
+func parseKafkaVersion(kafkaVersion string) sarama.KafkaVersion {
+	version, err := sarama.ParseKafkaVersion(kafkaVersion)
+	if err != nil {
 		fmt.Printf("Invalid API version option: %s\n", Config.kafkaVersionString)
-		fmt.Printf("Options: %v\n", validVersions)
+		fmt.Printf("Options: %+q\n", validVersions)
 		os.Exit(1)
 	}
+	return version
 }
 
 func main() {
@@ -256,7 +249,7 @@ func worker(n int, t *tachymeter.Tachymeter) {
 		conf.Producer.RequiredAcks = Config.requiredAcks
 		conf.Producer.Flush.MaxMessages = Config.batchSize
 		conf.Producer.MaxMessageBytes = Config.msgSize + 50
-		conf.Version = Config.kafkaVersion
+		conf.Version = parseKafkaVersion(Config.kafkaVersionString)
 
 		if Config.tls {
 
