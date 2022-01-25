@@ -61,21 +61,40 @@ var (
 		"0.10.0.0",
 		"0.10.0.1",
 		"0.10.1.0",
+		"0.10.1.1",
 		"0.10.2.0",
+		"0.10.2.1",
+		"0.10.2.2",
 		"0.11.0.0",
-		"1.0.0",
-		"1.1.0",
-		"1.1.1",
-		"2.0.0",
-		"2.0.1",
-		"2.1.0",
-		"2.2.0",
-		"2.2.1",
-		"2.3.0",
-		"2.4.0",
-		"2.5.0",
-		"2.6.0",
-	}
+		"0.11.0.1",
+		"0.11.0.2",
+		"1.0.0.0",
+		"1.0.1.0",
+		"1.0.2.0",
+		"1.1.0.0",
+		"1.1.1.0",
+		"2.0.0.0",
+		"2.0.1.0",
+		"2.1.0.0",
+		"2.1.1.0",
+		"2.2.0.0",
+		"2.2.1.0",
+		"2.2.2.0",
+		"2.3.0.0",
+		"2.3.1.0",
+		"2.4.0.0",
+		"2.4.1.0",
+		"2.5.0.0",
+		"2.5.1.0",
+		"2.6.0.0",
+		"2.6.1.0",
+		"2.6.2.0",
+		"2.7.0.0",
+		"2.7.1.0",
+		"2.8.0.0",
+		"2.8.1.0",
+		"3.0.0.0",
+		"3.1.0.0"}
 )
 
 func init() {
@@ -90,7 +109,7 @@ func init() {
 	flag.IntVar(&Config.writersPerWorker, "writers-per-worker", 5, "Number of writer (Kafka producer) goroutines per worker")
 	brokerString := flag.String("brokers", "localhost:9092", "Comma delimited list of Kafka brokers")
 	flag.IntVar(&Config.interval, "interval", 5, "Statistics output interval (seconds)")
-	flag.StringVar(&Config.kafkaVersionString, "api-version", "0.10.2.0", "Explicit sarama.Version string")
+	flag.StringVar(&Config.kafkaVersionString, "api-version", "", "Explicit sarama.Version string")
 	flag.BoolVar(&Config.tls, "tls", false, "Whether to enable TLS communcation")
 	flag.StringVar(&Config.tlsCaCertificate, "tls-ca-cert", "", "Path to the CA SSL certificate")
 	flag.StringVar(&Config.tlsCertificate, "tls-cert-file", "", "Path to the certificate file")
@@ -142,9 +161,6 @@ func main() {
 	}
 
 	version := Config.kafkaVersionString
-	if version == "" {
-		version = "automatic"
-	}
 
 	// Print Sangrenel startup info.
 	fmt.Printf("\nStarting %d client workers, %d writers per worker\n", Config.workers, Config.writersPerWorker)
