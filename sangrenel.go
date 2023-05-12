@@ -33,6 +33,7 @@ type config struct {
 	workers               int
 	writersPerWorker      int
 	noop                  bool
+	emitErrors            bool
 	interval              int
 	kafkaVersion          sarama.KafkaVersion
 	kafkaVersionString    string
@@ -107,6 +108,7 @@ func init() {
 	flag.StringVar(&Config.requiredAcksName, "required-acks", "local", "RequiredAcks config: none, local, all")
 	flag.IntVar(&Config.maxOpenRequests, "max-open-requests", 5, "Configures max.in.flight.requests.per.connection")
 	flag.BoolVar(&Config.noop, "noop", false, "Test message generation performance (does not connect to Kafka)")
+	flag.BoolVar(&Config.emitErrors, "emit-errors", false, "Emit write errors to stderr")
 	flag.IntVar(&Config.workers, "workers", 1, "Number of workers")
 	flag.IntVar(&Config.writersPerWorker, "writers-per-worker", 5, "Number of writer (Kafka producer) goroutines per worker")
 	brokerString := flag.String("brokers", "localhost:9092", "Comma delimited list of Kafka brokers")
@@ -235,13 +237,12 @@ func main() {
 
 			fmt.Println(stats.Histogram.String(50))
 
-			// Check if the tacymeter size needs to be increased
-			// to avoid sampling. Otherwise, just reset it.
+			// Check if the tacymeter size needs to be increased to avoid
+			// sampling. Otherwise, just reset it.
 			if int(sentSinceLastInterval) > len(t.Times) {
 				newTachy := tachymeter.New(&tachymeter.Config{Size: int(2 * sentSinceLastInterval)})
-				// This is actually dangerous;
-				// this could swap in a tachy with unlocked
-				// mutexes while the current one has locks held.
+				// xxx this could swap in a tachy with unlocked mutexes
+				// while the current one has locks held.
 				*t = *newTachy
 			} else {
 				t.Reset()
@@ -253,8 +254,8 @@ func main() {
 	}
 }
 
-// worker is a high level producer unit and holds a single
-// Kafka client. The worker's Kafka client is shared by n (Config.writersPerWorker)
+// worker is a high level producer unit and holds a single Kafka client.
+// The worker's Kafka client is shared by n (Config.writersPerWorker)
 // writer instances that perform the message generation and writing.
 func worker(n int, t *tachymeter.Tachymeter) {
 	switch Config.noop {
@@ -310,8 +311,8 @@ func worker(n int, t *tachymeter.Tachymeter) {
 		for i := 0; i < Config.writersPerWorker; i++ {
 			go writer(client, t)
 		}
-	// If noop, we're not creating connections at all.
-	// Just generate messages and burn CPU.
+	// If noop, we're not creating connections at all. Just generate
+	// messages and burn CPU.
 	default:
 		for i := 0; i < Config.writersPerWorker; i++ {
 			go dummyWriter(t)
@@ -322,10 +323,9 @@ func worker(n int, t *tachymeter.Tachymeter) {
 	<-wait
 }
 
-// writer generates random messages and write to Kafka.
-// Each wrtier belongs to a parent worker. Writers
-// throttle writes according to a global rate limiter
-// and report write throughput statistics up through
+// writer generates random messages and write to Kafka. Each writer
+// belongs to a parent worker. Writers throttle writes according to a
+// global rate limiter and report write throughput statistics up through
 // a shared tachymeter.
 func writer(c sarama.Client, t *tachymeter.Tachymeter) {
 	// Init the producer.
@@ -373,9 +373,14 @@ func writer(c sarama.Client, t *tachymeter.Tachymeter) {
 			err = producer.SendMessages(msgBatch)
 			if err != nil {
 				// Sarama returns a ProducerErrors, which is a slice
-				// of errors per message errored. Use this count
-				// to establish an error rate.
+				// of errors per message (if it returned an error).
 				atomic.AddUint64(&errCnt, uint64(len(err.(sarama.ProducerErrors))))
+				// Optionally report.
+				if Config.emitErrors {
+					for _, e := range err.(sarama.ProducerErrors) {
+						fmt.Fprintf(os.Stderr, "%s\n", e.Error())
+					}
+				}
 			}
 
 			t.AddTime(time.Since(sendTime))
@@ -394,8 +399,8 @@ func writer(c sarama.Client, t *tachymeter.Tachymeter) {
 			}
 		}
 
-		// If the global per-second rate limit was met,
-		// the inner loop breaks and the outer loop sleeps for the interval remainder.
+		// If the global per-second rate limit was met, the inner loop
+		// breaks and the outer loop sleeps for the interval remainder.
 		time.Sleep(intervalEnd.Sub(time.Now()))
 	}
 }
@@ -434,8 +439,8 @@ func randMsg(m []byte, generator rand.Rand) {
 	}
 }
 
-// calcOutput takes a duration t and messages sent
-// and returns message rates in human readable network speeds.
+// calcOutput takes a duration t and messages sent and returns message
+// rates in human readable network speeds.
 func calcOutput(t float64, n uint64) (float64, string) {
 	m := (float64(n) / t) * float64(Config.msgSize)
 	var o string
