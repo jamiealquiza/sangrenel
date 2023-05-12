@@ -329,10 +329,13 @@ func worker(n int, t *tachymeter.Tachymeter) {
 // a shared tachymeter.
 func writer(c sarama.Client, t *tachymeter.Tachymeter) {
 	// Init the producer.
-	producer, err := sarama.NewSyncProducerFromClient(c)
+	producer, err := sarama.NewAsyncProducerFromClient(c)
 	if err != nil {
 		log.Println(err.Error())
 	}
+	go func() {
+		for ; ; <- producer.Errors() {}
+	}()
 	defer producer.Close()
 
 	source := rand.NewSource(time.Now().UnixNano())
@@ -366,22 +369,22 @@ func writer(c sarama.Client, t *tachymeter.Tachymeter) {
 				randMsg(msgData, *generator)
 				msg := &sarama.ProducerMessage{Topic: Config.topic, Value: sarama.ByteEncoder(msgData)}
 				// Append to batch.
-				msgBatch = append(msgBatch, msg)
+				producer.Input() <- msg
+				//msgBatch = append(msgBatch, msg)
 			}
 
 			sendTime = time.Now()
-			err = producer.SendMessages(msgBatch)
-			if err != nil {
-				// Sarama returns a ProducerErrors, which is a slice
-				// of errors per message (if it returned an error).
-				atomic.AddUint64(&errCnt, uint64(len(err.(sarama.ProducerErrors))))
-				// Optionally report.
-				if Config.emitErrors {
-					for _, e := range err.(sarama.ProducerErrors) {
-						fmt.Fprintf(os.Stderr, "%s\n", e.Error())
-					}
-				}
-			}
+			// if err != nil {
+			// 	// Sarama returns a ProducerErrors, which is a slice
+			// 	// of errors per message (if it returned an error).
+			// 	atomic.AddUint64(&errCnt, uint64(len(err.(sarama.ProducerErrors))))
+			// 	// Optionally report.
+			// 	if Config.emitErrors {
+			// 		for _, e := range err.(sarama.ProducerErrors) {
+			// 			fmt.Fprintf(os.Stderr, "%s\n", e.Error())
+			// 		}
+			// 	}
+			// }
 
 			t.AddTime(time.Since(sendTime))
 			atomic.AddUint64(&sentCnt, uint64(len(msgBatch)))
