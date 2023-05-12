@@ -29,6 +29,7 @@ type config struct {
 	compressionName       string
 	requiredAcks          sarama.RequiredAcks
 	requiredAcksName      string
+	maxOpenRequests       int
 	workers               int
 	writersPerWorker      int
 	noop                  bool
@@ -104,6 +105,7 @@ func init() {
 	flag.IntVar(&Config.batchSize, "message-batch-size", 500, "Messages per batch")
 	flag.StringVar(&Config.compressionName, "compression", "none", "Message compression: none, gzip, snappy")
 	flag.StringVar(&Config.requiredAcksName, "required-acks", "local", "RequiredAcks config: none, local, all")
+	flag.IntVar(&Config.maxOpenRequests, "max-open-requests", 5, "Configures max.in.flight.requests.per.connection")
 	flag.BoolVar(&Config.noop, "noop", false, "Test message generation performance (does not connect to Kafka)")
 	flag.IntVar(&Config.workers, "workers", 1, "Number of workers")
 	flag.IntVar(&Config.writersPerWorker, "writers-per-worker", 5, "Number of writer (Kafka producer) goroutines per worker")
@@ -263,6 +265,7 @@ func worker(n int, t *tachymeter.Tachymeter) {
 		conf.Producer.Compression = Config.compression
 		conf.Producer.Return.Successes = true
 		conf.Producer.RequiredAcks = Config.requiredAcks
+		conf.Net.MaxOpenRequests = Config.maxOpenRequests
 		conf.Producer.Flush.MaxMessages = Config.batchSize
 		conf.Producer.MaxMessageBytes = Config.msgSize + 50
 		conf.Version = parseKafkaVersion(Config.kafkaVersionString)
