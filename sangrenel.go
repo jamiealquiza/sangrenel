@@ -336,6 +336,9 @@ func writer(c sarama.Client, t *tachymeter.Tachymeter) {
 	go func() {
 		for ; ; <- producer.Errors() {}
 	}()
+		go func() {
+		for ; ; <- producer.Successes() {}
+	}()
 	defer producer.Close()
 
 	source := rand.NewSource(time.Now().UnixNano())
